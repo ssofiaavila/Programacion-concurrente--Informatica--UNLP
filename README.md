@@ -1,5 +1,5 @@
 # PC--Informatica--UNLP
-Material de programación concurrente- Facultad de informática UNLP
+Prácticas y material de programación concurrente, cursada 2do semestre 2023- Facultad de informática UNLP
 
 ## Prácticas ## 
 * <details>
