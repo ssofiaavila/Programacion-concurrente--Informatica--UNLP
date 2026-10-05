@@ -322,6 +322,71 @@ process Medico{
 
 > 12) Se debe simular el uso de un sistema virtual de venta de entradas para un evento musical. El sistema cuenta con C cajeros virtuales que atienden indefinidamente. Sin embargo, como la venta de entradas comienza a una hora determinada, sólo atienden a partir del aviso de un timer. Una vez que reciben dicho aviso, los cajeros atienden de acuerdo con el orden de llegada de los compradores. La atención consiste en recibir la solicitud del comprador (datos para el pago) y responderle si puedo comprar junto al comprobante de la operación. Para este evento se cuenta con E entradas y N compradores, donde cada comprador puede solicitar a lo sumo una entrada. 
 
+```
+sem iniciarVenta[C]= ([C] 0);
+sem mutexFila;
+sem avisoCompra= (0);
+sem esperaCompra[N]= ([N] 0);
+queue fila;
+compraExitosa boolean[N]= ([N] false);
+compra text[N]= ([N] null);
+int entradas= E;
+
+procedure Cajero[i=1..C] {
+    bool hayClientes= true;
+    int cliente;
+
+    V(iniciarVenta);
+    while (hayClientes) {
+        P(avisoCompra);
+        P(mutexFila);
+        pop(fila, cliente);
+        V(mutexFila);
+        P(mutexEntradas);
+        if (entrada > 0){
+            entrada--;
+            quedanEntradas= entrada > 0;
+            V(mutexEntradas);
+            compra= generarCompra();
+            compraExitosa[i]= true;
+            compra[i]= compra;
+            V(esperaCompra[i]);
+        } else {
+            quedanEntradas= false;
+            V(mutexEntradas);
+            compraExitosa[i]= false;
+            V(esperaCompra[i]);
+        }
+        P(mutexFila);
+        if (!fila.empty()){
+            hayClientes= true;
+        } else { hayClientes= false;}
+    }
+}
+
+
+procedure Comprador[i=1..N] {
+    text comprobante;
+
+    P(mutexFila);
+    push(fila, i);
+    V(mutexFila);
+    V(avisoCompra);
+    V(esperaCompra[i]);
+    if (compraExitosa[i]){
+        comprobante= compra[i];
+    }
+}
+
+procedure Timer {
+    delay(tiempoDeInicio);
+    for (i=1..C){
+        V(iniciarVenta);
+    }
+}
+
+```
+
 > 13) El CUIT es una clave que se usa en sistemas tributarios en Argentina para identificar a las personas. Consta de un total de once cifras numéricas siendo la última un dígito verificador (del 0 al 9). Una empresa cuenta con una lista de CUITs que debe procesar, debiendo informar la cantidad de CUITs por dígito verificador. Para ello, dispone de un software que emplea 5 workers, los cuales trabajan colaborativamente procesando de un CUIT por vez cada uno. Al finalizar el procesamiento, el último worker en terminar debe informar los resultados del procesamiento. Notas: la función obtenerDV(CUIT) retorna el dígito verificador para el CUIT recibida como entrada. La lista de CUITs se almacena como una cola global y la solución debe maximizar la concurrencia.
 
 > 14) Existe una sala de cine 3D, a las que asisten N personas a ver una película. Antes de entrar a la sala, los asistentes deben retirar los anteojos 3D en la máquina repartidora que se encuentra en la entrada. Se debe simular el uso de la máquina repartidora de anteojos con capacidad para A anteojos (A < N). Además, existe un repositor encargado de reponer los anteojos en la máquina cuando se agotan. Los usuarios usan la máquina según el orden de llegada. Cuando les toca usarla, sacan un par de anteojos y luego se dirige a la sala. En caso de que la máquina se quede sin anteojos, entonces le debe avisar al repositor para que cargue nuevamente la máquina en forma completa. Luego de la recarga, saca un par de anteojos y se retira. La reposición de anteojos no debe impedir que otros puedan agregarse a la fila.
@@ -336,6 +401,57 @@ process Medico{
 
 > 19) Simular un examen técnico para concursos NoDocentes de la facultad. En el mismo participan 100 personas distribuidas en 4 concursos con un coordinador en cada una de ellos. Cada persona ya conoce en qué concurso participa. El coordinador de cada concurso espera hasta que lleguen las 25 personas correspondientes al mismo, les entrega el examen a resolver y luego corrige los exámenes de esas 25 personas de acuerdo al orden en que van entregando. Cada persona al llegar debe esperar a que su coordinador le de el examen, lo resuelve, lo entrega para que su coordinador lo evalúe y espera hasta que le deje la nota para luego retirarse. Sólo usar los procesos que representen a las personas y a los coordinadores, todos deben terminar.
 
+```
+sem mutexFila[4]= ([4] 0);
+int llegadosGrupo[4]= ([4] 0);
+sem avisoCoordinador[4]= ([4] 0);
+sem esperaEnunciado[4]= ([4] 0);
+sem mutexExamenesACorregir[4]= ([4] 0);
+sem avisoExamenListo[4]= ([4] 0);
+int resultados[4][25];
+int enunciados [4][25]; //matriz para guardar los enunciados para los 100 alumnos
+queue examenesACorregir[4]= ([4] 0);
+sem esperarResultado[4][25]= ([4][25] 0);
+
+procedure Persona [i= 1..100]{
+    text enunciado, examen;
+    int concurso= ...;
+
+    P(mutexFila[concurso]); // me sumo a la cantidad por grupo
+    llegadosGrupo[concurso]++;
+    if (llegadosGrupo[concurso] == 25){ // si estamos todos le avisamos al coordinador
+        V(avisoCoordinador[concurso]);
+    }
+    V(mutexFila[concurso]);
+    P(esperaEnunciado[grupo]); //espero a mi enunciado
+    enunciado= enunciados[concurso].[i];
+    examen= realizarExamen(enunciado); // hago el examen
+    P(mutexExamenesACorregir[concurso]); //sumo mi examen a la lista de los que hay que corregir
+    push(examenesACorregir[concurso], examen); //vector de colas
+    V(mutexExamenesACorregir[concurso]);
+    V(avisoExamenListo[concurso][i]);
+    P(esperarResultado[concurso][i]);
+    resultado= resultados[i];
+}
+
+procedure Coordinador [i= 1..4]{
+    text examen;
+    P(avisoCoordinador[i]);
+    for(m=1..25){
+        enunciados[i][m]= generarEnunciado();
+        V(esperaEnunciado[i]);
+    }
+    for (m= 1..25){
+        P(avisoExamenListo[i]);
+        P(mutexExamenesACorregir[i]);
+        pop(examenesACorregir[i], examen);
+        V(mutexExamenesACorregir[i]);
+        resultado= corregirExamen(examen);
+        resultados[i][examen.id]= resultado;
+        P(esperarResultado[i][examen.id]);
+    }
+}
+```
 
 > 20) Se debe simular el funcionamiento de una mesa de votación en una elección donde hay 2 listas candidatas (A y B). A la misma acuden 300 personas para votar en el cuarto oscuro (se dispone de una función obtenervoto() que retorna la lista a votar A o B). Además está el presidente de mesa que es quien habilita a las personas a pasar a pasar al cuarto oscuro de a una a la vez de acuerdo al orden de llegada y cuando todas las personas han votado determina cual es la lista ganadora.
 
@@ -358,3 +474,285 @@ process Medico{
 
 > 28) Para un experimento se tiene una red con 15 controladores de temperatura y dos módulos centrales. Los controladores cada cierto tiempo toman la temperatura mediante la función medir() y la envía para que alguna de las centrales le indique qué debe hacer (número de 1 a 10) y luego realiza esa acción mediante la función actuar(). Las centrales atienden los pedidos de los controladores de acuerdo al orden de llegada, usando la función determinar() para determinar la acción que deberá hacer ese controlador (número 1 a 10). El tiempo que espera cada controlador para tomar nuevamente la temperatura empieza a contar después de haber ejecutado la función actuar().
 
+
+# Monitores
+
+> 5. Simular la atención en un centro de vacunación con 8 puestros para vacunación contra el coronavirus. Al centro acuden 200 paciente donde cada uno de ellos ya conoce el puesto al que se debe dirigir. En cada puestro hay un empleado para vacunar a los pacientes asignados a dicho puestro y lo hace de acuerdo al orden dado por la edad de paciente (cuando está libre atiende al de mayor edad que esté esperando en ese momento en ese puesto). Cada paciente al llegar al puesto que tenía asignado espera a que lo llamen y se dirige a la silla para que el empleado lo vacune y luego se retira. Suponer que existe una función Vacunar() que simula la atención del paciente. Suponer que cada puesto tiene asignado 25 pacientes. Todos los procesos deben terminar.
+
+```
+Monitor Puesto[i=1..8]{
+
+queue fila;
+cond avisoLlegada;
+cond esperaLlamado[25];
+cond esperaSalida;
+
+    procedure vacunarse(i: in int, edad: in int){
+        insertarsePorEdad(fila, i, edad);
+        signal(avisoLlegada);
+        wait(esperaLlamado[i]);
+        signal(esperaSalida);
+    }
+
+    procedure vacunar(paciente: out paciente){
+        if (! fila.empty()){
+            wait(avisoLlegada);
+        }
+        pop(fila, paciente);
+    }
+
+    procedure esperarSalida(i: in int){
+        signal(esperaLlamado[i]);
+        wait(esperaSalida);
+    }
+
+}
+
+procedure Paciente [i= 1..200]{
+    int nroPuesto=...;
+    int edad=...;
+    Puesto[nroPuesto].vacunarse(i, edad);
+}
+
+procedure Empleado [i=1..8]{
+    for (i=1..25){
+        Puesto[i].vacunar(paciente);
+        vacunar(paciente);
+        Puesto[i].esperarSalida(paciente.id); //podría haber modelado mejor la interacción entre Paciente/ Empleado pero me cansé
+    }
+}
+```
+
+> 6. En una sala se juntan 20 conferencistas y un coordinador para una conferencia internacional. Cuando todos han llegado a la sala (los 20 conferenciados y el coordinador) el coordinador abre la sesión con una presentación de 30 minutos y luego cada conferencista realiza su presentación de 10 minutos de a uno a la vez y de acuerdo con el orden que lleguen a la sala. Cuando todas las presentaciones terminaron, las personas (conferencistas y coordinador) se retiran.
+
+```
+Monitor Admin {
+int llegaron= 0, dieronCharla= 0;
+queue filaConferencistas;
+cond inicioCoordinador, espera[20];
+
+    procedure ingresarEvento(i: in int){
+        llegaron++;
+        push(filaConferencistas, i);
+        if (llegaron == 20){
+            signal(inicioCoordinador);
+        }
+        wait(espera[i]);
+    }
+
+    procedure iniciarCharla(){
+        if (llegaron < 20){ wait(inicioCoordinador)};
+    }
+
+    procedure llamarPrimerConferencista(){
+        int proximo;
+        push(filaConferencistas, proximo);
+        signal(espera[i]);
+        wait(finalizacion);
+    }
+
+    procedure finalizarCharla(){
+        int siguiente;
+        dieronCharla++;
+
+        if (dieronCharla < 20 ){
+            pop(filaConferencistas, siguiente);
+            signal(siguiente);
+            wait(finalizacion);
+        } else {
+            signal_all(finalizacion);
+        }
+    }
+}
+
+process Conferencista[i=1..20]{
+    Admin.ingresarEvento(i);
+    delay(10"); // doy mi conferencia
+    Admin.finalizarCharla();
+}
+
+process Coordinador{
+    Admin.iniciarCharla();
+    delay(30"); // charla del coordinador
+    Admin.llamarPrimerConferencista();
+}
+```
+
+> 7. En una sala hay un profesor auxiliar y 100 alumnos. Cada alumno continuamente hace consultas que pueden ser de dos tipos: TEÓRICAS o PRÁCTICAS y cada vez que tiene una consulta para hacer se la envía por mail al docente correspondiente y espera a que este le envíe la respuesta. El profesor solo atiende consultas TEÓRICAS y el auxiliar sólo consultas PRÁCTICAS cada uno resuelve sus consultas de acuerdo con el órden de llegada. Maximizar concurrencia, el alumno sabe de qué tipo es cada consulta, los procesos no deben terminar.
+
+```
+
+// NOTA: 1= PROFESOR, 2= AUXILIAR, podría hacer un monitor + proceso nombrado a cada entidad pero repito código
+
+Monitor Mail[i= 1..2]{
+
+    procedure enviarConsulta(consulta: in Consulta, respuesta: in text){
+        push(consultas, consulta);
+        signal(hayConsulta);
+        wait(hayRespuesta);
+        pop(respuestas, respuesta);
+    }
+
+    procedure obtenerConsulta(consulta: in Consulta){
+        if (!consultas.empty()){
+            wait(hayConsulta);
+        }
+        pop(consultas, consulta);
+    }
+
+    procedure enviarRespuesta(respuesta: in Respuesta){
+        pop(respuestas, respuesta);
+        signal(hayRespuesta);
+    }
+}
+procedure Alumno{
+    Consulta consulta;
+    queue respondidas;
+
+    while (true){
+        consulta= generarConsulta();
+        Mail[consulta.tipo].enviarConsulta(respuesta);
+        push(respondidas, respuesta);
+    }
+}
+
+procedure Docente [i= 1..2]{
+    Consulta consulta;
+    text respuesta;
+
+    while (true){
+        Mail[i].obtenerConsulta(consulta);
+        respuesta= generarRespuesta(consulta);
+        Mail[i].enviarRespuesta(respuesta);
+    }
+}
+```
+
+> 8. En una acopiadora de cereales hay 2 empleados, uno para atender a los camiones de maíz y otro para los de girasol. Hay 30 camiones que llegan para descargar su carga (15 de maíz y 15 de girasol), cuando el camión llega espera hasta que el empleado correspondiente le avise que puede descargar el cereal. Cada empleado hace descargar los camiones que le corresponden de a uno a la vez y de acuerdo con el orden de llegada. El camión sabe qué tipo de cereal lleva; todos los procesos deben terminar.
+
+```
+
+//NOTA: 1= maíz, 2= girasol
+Monitor Admin [i=1..2]{
+queue esperando;
+
+    procedure avisarLlegada(i: in int){
+        push(esperando, i);
+        signal(hayCamion);
+        wait(realizarDescarga);
+    }
+
+    procedure llamarCamion(){
+        if (!esperando.empty()){
+            wait(hayCamion);
+        }
+        pop(esperando, aux);
+        signal(realizarDescarga);
+        wait(descargaFinalizada);
+    }
+
+    procedure avisarFinalizacion(){
+        signal(descargaFinalizada);
+    }
+}
+
+procedure Camion [i= 1..30]{
+    int tipo=...;
+    Admin[tipo].avisarLlegada(i);
+    delay(descargar); //tiempo que demora la descarga
+    Admin[tipo].avisarFinalizacion();
+}
+
+procedure Empleado [i=1..2]{
+
+    for (i=1..15){
+        Admin[i].llamarCamion();
+    }
+
+}
+```
+
+> 9. En una oficina hay un supervisor, un empleado y 50 personas que solicitan por mail una operación. El empleado SOLO atiende CONSULTAS, mientras que el supervisor sólo atiende TRÁMITES; cada uno atiende sus pedidos de acuerdo con el orden de llegada. Cada persona envía UNA solicitud que puede ser un TRÁMITE o para una CONSULTA, y luego espera a que le envíe el resultado. La persona sabe de qué tipo es la consulta, el empleado y el supervisor NO deben terminar su ejecución.
+
+```
+NOTA: 1= SUPERVISOR, 2= EMPLEADO, podría hacer un monitor + proceso nombrado a cada entidad pero repito código
+
+
+Monitor Oficina[i=1..2]{
+
+    procedure enviarConsulta(operacion: in Operacion, respuesta: out respuesta){
+        push(operaciones, operacion);
+        signal(hayConsulta);
+        wait(esperaRespuesta);
+        pop(respuestas, respuesta);
+    }
+
+    procedure responderConsulta(operacion: out Operacion){
+        if (!operaciones.empty()){
+            wait(hayConsulta);
+        }
+        pop(operaciones, operacion);
+    }
+
+    procedure enviarRespuesta(respuesta: in Respuesta){
+        push(respuestas, respuesta);
+        signal(esperaRespuesta);
+    }
+}
+
+procedure Persona [i=1..50]{
+    Operacion operacion;
+    Oficina[operacion.tipo].enviarConsulta(operacion);
+}
+
+procedure Personal [i=1..2]{
+    Operacion operacion;
+    text respuesta;
+
+    while (true){
+        Admin[i].responderConsulta(operacion);
+        respuesta= generarRespuesta(operacion);
+        Admin[i].enviarRespuesta(respuesta);
+    }
+}
+
+```
+
+> 10. Existen N personas que desean acceder a un mirador al borde del lago Nahuel Huapi en Bariloche. Como el
+    mirador es angosto, sólo puede ser usado por una persona a la vez.
+    a. El accedo al mirador es por orden de llegada.
+    b. El acceso al mirador es por orden de llegada, pero dando prioridad a los mayores de 60 años.
+
+```
+procedure Persona [i=1..N]{
+    Mirador.ingresar(i);
+    delay(paseoMirador);
+    Mirador.salir();
+}
+
+Monitor Mirador {
+
+    bool libre= true;
+    cond pasarAMirador;
+    queue fila;
+
+    procedure ingresar(i: in int){
+        if (not libre){
+            push(fila, i);
+            wait(pasarAMirador);
+        } else{
+            libre= false;
+        }
+    }
+
+    procedure salir(){
+        if (!cola.empty()){
+            pop(fila, siguiente);
+            signal(pasarAMirador);
+        }
+        else {
+            libre= true;
+        }
+    }
+}
+```
