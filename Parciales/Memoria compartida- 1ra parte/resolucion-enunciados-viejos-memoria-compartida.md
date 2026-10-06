@@ -564,6 +564,43 @@ procedure Coordinador {
 
 > 18) En una fábrica de muebles trabajan 50 empleados. Al llegar, los empleados forman 10 grupos de 5 personas cada uno, de acuerdo al orden de llegada (los 5 primeros en llegar forman el primer grupo, los 5 siguientes al segundo grupo, y así sucesivamente). Cuando un grupo se ha terminado de formar, todos sus integrantes se ponen a trabajar. Cada grupo debe armar M muebles (cada mueble es armado por un solo empleado) mientras haya muebles por armar en el grupo los empleados los irán resolviendo (cada mueble es armado por un solo empleado). Cada empleado puede tardar distinto tiempo en armar un mueble. Sólo se pueden usar los procesos Empleado y todos deben terminar su ejecución.
 
+```
+queue nrosGrupos;
+sem mutexFila= 1;
+sem llegada[10]= ([10] 0);
+llegaron int[10]= ([10] 0);
+sem iniciarProduccion[10]= ([10] 0);
+sem mutexMuebles[10]= ([10 0]);
+cantMuebles[10]= ([10] 0);
+
+procedure Empleado[i=1..50]{
+    int grupo;
+    bool seguir;
+    P(mutexFila);
+    pop(fila, grupo);
+    V(mutexFila);
+    P(llegada[grupo]);
+    llegaron[grupo]++;
+    if (llegaron[grupo] == 5){
+        V(llegadaGrupo[grupo]);
+        for (i=1..4){
+            V(iniciarProduccion[grupo]);
+        }
+    } else {
+        P(iniciarProduccion[grupo]);
+        V(llegadaGrupo[grupo]);
+    }
+    while (seguir){
+        P(mutexMuebles[grupo]);
+        if (cantMuebles[grupo > 0]){
+            cantMuebles --;
+        } else {
+            seguir= false;
+        }
+    }
+}
+```
+
 > 19) Simular un examen técnico para concursos NoDocentes de la facultad. En el mismo participan 100 personas distribuidas en 4 concursos con un coordinador en cada una de ellos. Cada persona ya conoce en qué concurso participa. El coordinador de cada concurso espera hasta que lleguen las 25 personas correspondientes al mismo, les entrega el examen a resolver y luego corrige los exámenes de esas 25 personas de acuerdo al orden en que van entregando. Cada persona al llegar debe esperar a que su coordinador le de el examen, lo resuelve, lo entrega para que su coordinador lo evalúe y espera hasta que le deje la nota para luego retirarse. Sólo usar los procesos que representen a las personas y a los coordinadores, todos deben terminar.
 
 ```
@@ -619,6 +656,43 @@ procedure Coordinador [i= 1..4]{
 ```
 
 > 20) Se debe simular el funcionamiento de una mesa de votación en una elección donde hay 2 listas candidatas (A y B). A la misma acuden 300 personas para votar en el cuarto oscuro (se dispone de una función obtenervoto() que retorna la lista a votar A o B). Además está el presidente de mesa que es quien habilita a las personas a pasar a pasar al cuarto oscuro de a una a la vez de acuerdo al orden de llegada y cuando todas las personas han votado determina cual es la lista ganadora.
+>
+```
+sem avisoLlegada= 0;
+sem mutexFila= 1;
+sem avisoFinalizacion= 0;
+queue fila;
+sem esperarTurno[300]= ([300] 0);
+int votaron= 0;
+
+process Persona[i= 1...300]{
+    int aux;
+    P(mutexFila);
+    push(fila, i);
+    V(avisoLlegada);
+    P(esperaTurno[i]);
+    aux= obtenerVoto();
+    lista[aux]++;
+    V(avisoFinalizacion);
+    votaron++;
+    if (votaron ==300){
+        V(esperaRecuento);
+    }
+}
+
+procedure Presidente{
+    int aux;
+    for (i=1..300){
+        P(avisoLlegada);
+        pop(fila, aux);
+        V(mutexFila);
+        P(esperaTurno[aux]);
+        P(avisoFinalizacion);
+    }
+    P(esperaRecuento);
+    HacerVotacion(lista);
+}
+```
 
 > 21) En un examen final hay P alumnos y 3 profesores. Cuando todos los alumnos y profesores han llegado comienza el examen. Para esto uno de los profesores (el primero en llegar) le da el examen a cada alumno. Cada alumno resuelve su examen, lo entrega y espera a que alguno de los profesores lo corrija y le indique la nota. Los profesores corrigen los exámenes respetando el orden en que los alumnos van entregando.
 
@@ -629,8 +703,93 @@ procedure Coordinador [i= 1..4]{
 
 > 24) Simular un examen escrito que deben rendir 60 alumnos repartidos en 3 aulas (20 alumnos en cada una) con un docente en cada una de ellas. Cada alumno ya tiene asignado el aula en la que debe rendir. El docente de cada aula espera hasta que sus 20 alumnos hayan llegado para darles el enunciado del examen (el mismo para todos) y luego les corrige el examen de acuerdo al orden en que van entregando. Cada alumno cuando llega debe esperar a que su docente le dé el enunciado del examen, lo resuelve, lo entrega para que el mismo lo corrija y le deje su nota. Cuando el alumno ya tiene su nota se retira.
 
-> 25) Simular la atención de una salita médica para vacunar contra el covid. Hay una enfermera encargada de vacunar 30 pacientes, cada paciente tiene un turno asignado. La enfermera atiende a los pacientes de acuerdo al turno que cada uno tiene asignado. Cada paciente al llegar espera a que sea su turno y se dirige al consultorio para que la enfermera lo vacune y luego se retira.
+```
+sem mutexLlegada[3]= ([3] 1);
+sem esperaEnunciado[60]= ([60] 0);
+text enunciados[60]= ([60] 0);
+sem examenEntregado[3]= ([3] 0);
+int llegados[3]= ([3] 0);
+sem llegaronTodos[3]= ([3] 0);
+sem mutexExamenes[3] = ([3] 1);
+queue[3] examenes;
+sem esperaNota[60]= ([60] 0);
+int notas[60];
 
+procedure Alumno[i= 1..60]{
+    int nroAula= ...;
+    text examen, enunciado;
+    P(mutexLlegada[nroAula]);
+    llegados[nroAula]++;
+    if (llegados[nroAula] == 20){
+        V(llegaronTodos[nroAula]);
+    }
+    V(mutexLlegada[nroAula]);
+    P(esperarEnunciado[i]);
+    enunciado= enunciados[i];
+    examen= resolverExamen(enunciado);
+    P(mutexExamenes[nroAula]);
+    push(examenes[nroAula]);
+    V(mutexExamenes[nroAula]);
+    V(examenEntregado[nroAula]);
+    P(esperaNota[i]);
+    nota= notas[i];
+}
+
+procedure Profesor[i=1..3]{
+    boolean pendientes;
+    text aux;
+    V(llegaronTodos[i]);
+    for (i=1...20){
+        V(enunciados[i])= generarEnunciado();
+        V(esperaEnunciado[i]);
+    }
+    while (pendientes){
+        P(examenEntregado[i]);
+        P(mutexExamenes[i]);
+        pop(examenEntraron[i], aux);
+        if (!examenesEntregaron[i].empty()){
+            pendientes= false;
+        }
+        V(mutexExamenes[i]);
+        notas= correccion(aux);
+        notas[i]= nota;
+        V(esperaNota[i]);
+    }
+}
+ 
+```
+
+> 25) Simular la atención de una salita médica para vacunar contra el covid. Hay una enfermera encargada de vacunar 30 pacientes, cada paciente tiene un turno asignado. La enfermera atiende a los pacientes de acuerdo al turno que cada uno tiene asignado. Cada paciente al llegar espera a que sea su turno y se dirige al consultorio para que la enfermera lo vacune y luego se retira.
+```
+sem mutexFila= 0;
+queue fila;
+sem espera[30]= ([30] 0);
+sem avisarLlegada, esperaVacuna, avisarSalida= 0;
+
+procedure Paciente[i=1..30]{
+    P(mutexFila);
+    push(fila, i);
+    V(mutexFila);
+    P(espera[i]);
+    V(avisarLlegada);
+    P(esperaVacuna);
+    V(avisarSalida);
+}
+
+procedure Enfermera {
+    int aux;
+    for (i=1..30){
+        P(mutexFila);
+        pop(fila, aux);
+        V(mutexFila);
+        V(espera[aux]);
+        P(avisarLlegada);
+        Vacunar();
+        V(esperaVacuna);
+        P(esperaSalida);
+    }
+}
+```
 
 > 26) Suponga un juego donde hay 30 competidores. Cuando los jugadores llegan avisan al encargado, una vez que están los 30, el encargado del jucgo les entrega un número aleatorio del 1 al 15 de tal manera que dos competidores tendrán el mismo número (Suponga que existe una función DarNumero() que devuelve en forma aleatoria un número del 1 al 15, el encargado no se guarda el numero que les asigna a los competidores). Una vez que ya se entregaron los 30 números, los competidores buscarán concurrentemente su compañero que tenga el mismo número (tenga en cuenta que pueden empezar a buscar cuando todos los competidores tengan un número ; Además la búsqueda de un jugador no interfiere con la búsqueda de otros que tengan distinto número). Cuando los competidores SE encuentran permanecen en una sala durante 15 minutos y dejan de jugar, Luego cada uno de los competidores avisa al encargado que terminó de jugar y espera que su compañero (el que tenía el mismo número) también avisa que finalizó para luego irse ambos, el encordado cuando llega el segundo competidor les devuelve a ambos el resultado que obtuvieron que es el orden en el que se van. (Los primeros en irse, tendrán como resultado 1, los últimos 15). Para modelizar el tiempo utilice la función Delay(x) que produce un retardo de x minutos.
 
@@ -641,6 +800,14 @@ procedure Coordinador [i= 1..4]{
 
 
 # Monitores
+> 1. Resolver con monitores el siguiente problema. En un sistema operativo se ejecutan 20 procesos que periódicamente realizan cierto cómputo mediante la función Procesar(). Los resultados de dicha función son persistidos en un archivo, para lo que se requiere de acceso al subsistema de E/S. Sólo un proceso a la vez puede hacer uso del subsistema de E/S, y el acceso al mismo se define por la prioridad del proceso (menos valor indica mayor prioridad). 
+
+> 2.  Simular una atención en una Salita Medica para vacunar contra el coronavirus. Hay UNA enfermera encargada de vacunar a 30 pacientes. Cada paciente tiene un turno asignado (valor entre 1 y 30 ya conocido por el paciente). La enfermera atiende a los pacientes de acuerdo al turno que cada uno tiene asignado. Cada paciente al llegar espera a que sea su turno y se dirige al consultorio para que la enfermera lo vacune y luego se retira. Nota: suponer que existe una función Vacunar() que simula la atención del paciente por parte de la enfermera. Todos los procesos DEBEN terminar.
+
+> 3. Simular el uso de un puente de un solo carril y sentido por donde puede pasar un vehículo a la vez. Hay N vehículos donde algunos son autos y otros ambulancias. Los vehículos deben pasar de acuerdo al orden de llegada, pero siempre dando prioridad a las ambulancias. Suponga que cada vehículo tarda 5 minutos en pasar por el puente.
+
+> 4. Se debe simular una carrera a campo traviesa con C corredores, donde en la mitad del recorrido hay un puente colgante que puede ser usado por una única persona a la vez. Cuando los C corredores han llegado al punto de partida comienza la carrera.Cuando un corredor llega al puente espera su turno (respetando el orden de llegada al mismo) y lo cruza (suponga que tarda un par de minutos en cruzarlo) luego continua su carrera hasta llegar a la meta. Nota: Cada corredor pasa solo una vez por el puente. Solo se pueden usar procesos que representen a los corredores.
+
 
 > 5. Simular la atención en un centro de vacunación con 8 puestros para vacunación contra el coronavirus. Al centro acuden 200 paciente donde cada uno de ellos ya conoce el puesto al que se debe dirigir. En cada puestro hay un empleado para vacunar a los pacientes asignados a dicho puestro y lo hace de acuerdo al orden dado por la edad de paciente (cuando está libre atiende al de mayor edad que esté esperando en ese momento en ese puesto). Cada paciente al llegar al puesto que tenía asignado espera a que lo llamen y se dirige a la silla para que el empleado lo vacune y luego se retira. Suponer que existe una función Vacunar() que simula la atención del paciente. Suponer que cada puesto tiene asignado 25 pacientes. Todos los procesos deben terminar.
 
