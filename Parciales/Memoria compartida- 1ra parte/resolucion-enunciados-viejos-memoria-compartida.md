@@ -388,12 +388,177 @@ procedure Timer {
 ```
 
 > 13) El CUIT es una clave que se usa en sistemas tributarios en Argentina para identificar a las personas. Consta de un total de once cifras numéricas siendo la última un dígito verificador (del 0 al 9). Una empresa cuenta con una lista de CUITs que debe procesar, debiendo informar la cantidad de CUITs por dígito verificador. Para ello, dispone de un software que emplea 5 workers, los cuales trabajan colaborativamente procesando de un CUIT por vez cada uno. Al finalizar el procesamiento, el último worker en terminar debe informar los resultados del procesamiento. Notas: la función obtenerDV(CUIT) retorna el dígito verificador para el CUIT recibida como entrada. La lista de CUITs se almacena como una cola global y la solución debe maximizar la concurrencia.
+```
+sem mutexFila=1;
+queue fila;
+sem mutexNros[5]=([5] 1);
+sem cantidad[5]=([5] 0);
+int workers= 0;
+sem mutexFinalizar;
+
+procedure Workers [i=1..5]{
+    int aux, nro;
+    boolean sigo= true;
+    
+    while (sigo){
+        P(mutexFila);
+        if (not vacia(fila)){
+            pop(fila, aux);
+        } else {
+            sigo= false;
+        }
+        if (aux != null){
+            nro= obtenerDV(aux);
+            P(mutexNros[nro]);
+            cantidad[nro]++;
+            V(mutexNros[nro]);
+        }
+    }
+    P(mutexFinalizar);
+    workers++;l
+    if (workers==5)[
+        V(mutexFinalizar);
+        for (i=1..5){
+            System.println(cantidad[n]);
+        }
+    ]
+}
+```
 
 > 14) Existe una sala de cine 3D, a las que asisten N personas a ver una película. Antes de entrar a la sala, los asistentes deben retirar los anteojos 3D en la máquina repartidora que se encuentra en la entrada. Se debe simular el uso de la máquina repartidora de anteojos con capacidad para A anteojos (A < N). Además, existe un repositor encargado de reponer los anteojos en la máquina cuando se agotan. Los usuarios usan la máquina según el orden de llegada. Cuando les toca usarla, sacan un par de anteojos y luego se dirige a la sala. En caso de que la máquina se quede sin anteojos, entonces le debe avisar al repositor para que cargue nuevamente la máquina en forma completa. Luego de la recarga, saca un par de anteojos y se retira. La reposición de anteojos no debe impedir que otros puedan agregarse a la fila.
+```
+sem mutexFila=1;
+boolean libre=true;
+sem esperaTurno[N]= ([50] 0);
+const BOTELLAS_TOTAL=...l
+sem llamarRepositor, hayBotellas= 0;
+
+process Persona [i= 1..N]{
+    P(mutexFila);
+    if (not libre){
+        push(fila, i);
+        V(mutexFila);
+        P(esperaTurno[i]);
+    } else {
+        libre= true;
+        V(mutexFila);
+    }
+    if (botellasDisponibles > 0){
+        botellasDisponibles--;
+        V(mutexMaquina);
+    } else {
+        V(llamarARepositor);
+        P(hayBotellas);
+    }
+    P(mutexFila);
+    if (!fila.empty()){
+        pop(fila, aux);
+        V(esperaTurno[aux]);
+    } else {
+        libre= true;
+        V(mutexFila);
+    }
+}
+```
 
 > 15) En una estación de trenes, asisten P personas que deben realizar una carga de su tarjeta SUBE en la terminal disponible. La terminal es utilizada en forma exclusiva por cada personal de acuerdo con el orden de llegada. Implemente una solución usando únicamente procesos Persona. La función usarTerminal() le permite cargar la SUBE en la terminal disponible.
+```
+sem mutexFila= 1;
+queue fila;
+sem esperando[P]= ([P] 0);
+int aux;
+
+process Persona[i= 1...P]{
+    P(mutexFila);
+    if (not libre){
+        push(fila, i);
+        V(mutexFila);
+        P(esperando[i]);
+    } else {
+        libre= false;
+        V(mutexFila);
+    }
+    UsarTerminal();
+    P(mutexFila);
+    if (!fila.empty()){
+        push(fila, aux);
+        V(esperando[aux]);
+    } else {
+        libre= true;
+        V(mutexFila);
+    }
+}
+```
 
 > 16) En una empresa hay un coordinar y 30 empleados que formarán 3 grupos de 10 empleados cada uno. Cada grupo trabaja en una sección diferente y debe realizar 345 unidades de un producto. Cada empleado al llegar se dirige al coordinador para que le indique el número de grupo al que pertenece y una vez que conoce este dato comienza a trabajar hasta que se han terminado de hacer las 345 unidades correspondientes al grupo (cada unidad es hecha por un único empleado). Al terminar de hacer las 345 unidades los 10 empleados del grupo se deben juntar para retirarse todos juntos. El coordinar debe atender a los empleados de acuerdo al orden de llegada para darle el número de grupo (a los 10 primeros que lleguen se le asigna el grupo 1, a los 10 del medio el 2 y a los 10 últimos el 3). Cuando todos los grupos terminaron de trabajar el coordinador debe informar (imprimir en pantalla) el empleado que más unidades ha realizado (si hubiese más de uno con la misma cantidad máxima debe informarlos a todos ellos. Existe una función generar() que simula la elaboración de una unidad de un producto.
+```
+queue fila;
+sem mutexFila= 0;
+sem avisarCoordinador= 0;
+sem asignarEquipos= 0;
+sem avisarFinalizacion[3]= ([3] 0);
+int llegados[3]= ([3] 0);
+sem esperaAsignacion[30]= ([30] 0);
+grupoAsignado[30]= ([30] 0);
+int cantGenerada[3]= ([3] 0);
+sem llegada[3]= ([3] 0);
+
+process Empleado[i=1..30]{
+    int nroGrupo;
+    boolean seguir= true;
+    
+    P(mutexFila);
+    push(fila, i);
+    V(mutexFila);
+    V(asignarEquipos);
+    P(esperaAsignacion[i]);
+    nroGrupo= grupoAsignado[i];
+
+    while (seguir){
+        Generar();
+        P(mutexCantidad[nroGrupo]);
+        if (cantidadGenerados[nroGrupo] < 345){
+            cantidadGenerada[nroGrupo++]l
+            cantEmpelados[i]++;
+            V(mutexCantidad[nroGrupo]);
+        } else {
+            seguir= false;
+            P(mutexCantidad[nroGrupo]);
+        }
+    }
+    P(llegada[nroGrupo]);
+    llegados[nroGrupo]++;
+    if (llegados[nroGrupo==10]){
+        for(i=1..10){
+            V(avisarFinalizacion[nroGrupo]);
+        }
+    } else {
+        P(avisarFinalizacion[nroGrupo]);
+    }
+    P(finalizado);
+    finalizaron ++;
+    if (finalizacion == 30){
+        V(avisarCoordinador);
+    } else {
+        V(finalizado);
+    }
+}
+
+procedure Coordinador {
+    int aux:
+    for (i=1..30){
+        P(asignarEquipos);
+        P(mutexFila);
+        pop(fila, aux);
+        V(mutexFila);
+        grupoAsignado[aux].asignarGrupo();
+        V(esperaAsignacion[aux]);
+    }
+    P(avisarCoordinador);
+    ganador= obtenerGanador();
+    System.out.println(ganador);
+}
+```
 
 > 17) Se debe simular el uso de una máquina expendedora de gaseosas con capacidad para 100 latas por parte de U usuarios. Además existe un repositor encargado de reponer las latas de la máquina. Los usuarios usan la máquina según el orden de llegada. Cuando les toca usarla, sacan una lata y luego se retiran. En el caso de que la máquina se queda sin latas, entonces le debe avisar al repositor para que cargue nuevamente la máquina en forma completa. Luego de la recarga, saca una lata y se retira. Mientras se reponen las latas se deben permitir que otros usuarios puedan agregarse a la fila.
 
