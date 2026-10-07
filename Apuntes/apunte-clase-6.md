@@ -1,7 +1,5 @@
 # Apunte — Teoría 6: PMS y CSP
 
-Versión editable (Claude Doc): https://claude.ai/code/artifact/cf3f46b1-d8b3-433d-97c8-fb34c546fcf8
-
 ## La idea en una frase
 
 En Pasaje de Mensajes Sincrónicos (PMS) el emisor se queda bloqueado hasta que el receptor recibe el mensaje. Esa es la única diferencia con PMA, y de ella salen todas las consecuencias de la clase.
