@@ -38,6 +38,18 @@ empty(nombreArreglo[i]);
 ## A tener en cuenta
 - Lo primero es definir la estructura del programa: qué procesos y cómo se van a comunicar.
 - Los canales actáun como COLAS de mensajes, por lo que mantienen el orden de los mismos.
+- Los canales son compartidos por todos los procesos.
+- Por ser PMA, el *send* no bloquea al emisor.
+- Se puede utilizar el if/do no determinístico, donde cada opción es una condición booleana donde se puede preguntar por variables locales y/o por empty de canales.
+```
+    if (cond1) -> acciones 1;
+        (cond 2) -> accuibes 2;
+        (cond N) -> acciones N;
+    end if;
+    De todas las conficiones sea verdadera elige una en forma no determinística y ejecuta las acciones correspondientes. Si ninguna es verdadera, sale del if/do sin ejecutar acción alguna.
+```
+- Se debe evitar hacer ***bussy waiting*** siempre que sea posible.
+- En todos los ejercicios el tiempo debe representarse con la función **delay**.
 
 # Ejemplos
 ## Ejemplo 1
