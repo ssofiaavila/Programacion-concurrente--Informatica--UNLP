@@ -1,4 +1,5 @@
 # Pasaje de mensajes asincrónico (PMA)
+
 ### Ejercicio 1
 Suponga que N clientes llegan a la cola de un banco y que serán atendidos por sus empleados. Analice el problema y defina qué procesos, recursos y canales/comunicaciones
 serán necesarios/convenientes para resolverlo. Luego, resuelva considerando las siguientes situaciones:
@@ -81,8 +82,54 @@ Se desea modelar el funcionamiento de un banco en el cual existen 5 cajas para r
 donde hay menos personas esperando; una vez seleccionada, espera a ser atendido. En cada caja, los clientes son atendidos por orden de llegada por los cajeros. Luego del pago, se les entrega un comprobante. Nota: maximizar la concurrencia.
 
 ```
-process Cliente[i=1..P]{
+chan clienteEsperando(int);
+chan nroCajaAsignada[P](int);
+chan comprobantes[P](text);
+chan salidaCaja(int);
+chan clienteAvisa(text);
 
+process Cliente[i=1..P]{
+    int cajaAsignada;
+    text comprobante;
+
+    send clienteEsperando(i); // avisa que está esperando para que le asignen una caja
+    send clienteAvisa('asignacion');
+    receive nroCajaAsignada[i](cajaAsignada); // obtiene qué caja usará
+    send avisarLlegada[cajaAsignada](i); // avisa a la caja asignada que llegó
+    receive comprobantes[i](comprobate); // obtiene su comprobante
+    send salidaCaja[cajaAsignada](cajaAsignada);
+    send clienteAvisa('salida');
+}
+
+process Admin{
+    int idC;
+    cantEsperando int[5];
+    text operacion;
+
+    while (true){
+        receive clienteAvisa(operacion);
+        if (operacion= 'asignacion'){
+            receive salidaCaja(cajaLiberada);
+            cantEsperando[cajaLiberada]--;
+        } else {
+            receive clienteEsperando(idC);
+            cajaMenor= obtenerMenorEsperando(cantEsperando); // función para saber qué caja asignarle
+            cantEsperando[cajaMenor]++;
+            send nroCajaAsignada[i](cajaMenor);
+        }   
+
+    }        
+}
+
+
+process Caja[i=1..5]{
+    int siguiente;
+
+    while (true){
+        receive avisarLlegada[i](siguiente);
+        comprobante= generarComprobate(siguiente);
+        send comprobantes[siguiente](comprobante);
+    }
 }
 ```
 
@@ -188,42 +235,6 @@ Resolver la administración de 3 impresoras de una oficina. Las impresoras son u
   ```
   chan archivos(text);
   chan archivosDirector(text);
-
-  process Administrativo[i=1..N]{
-    text archivo;
-    while (true){
-        archivo= generarArchivo();
-        send archivos(archivo);
-    }
-  }
-
-  process Director{
-    text archivo;
-    while (true){
-        archivo= generarArchivo();
-        send archivosDirector(archivo);
-    }
-  }
-
-  process Impresora[i=1..3]{
-    text archivo;
-    while (true){
-        if (not empty(archivoDirector)){
-            receive archivosDirector(archivo);
-            imprimir(archivo);
-        } else {
-            if (not empty(archivos)){ // necesario sumar esta condición?
-                receive archivos(archivo);
-            }
-        }
-    }
-  }
-  ```
-  
-  **Solución b. respetando prioridad, CORRECTA**
-  ```
-  chan archivos(text);
-  chan archivosDirector(text);
   chan pendienteImpresion();
 
   process Administrativo[i=1..N]{
@@ -269,23 +280,6 @@ Resolver la administración de 3 impresoras de una oficina. Las impresoras son u
   }
   ```
 - c. Modifique la solución (a) considerando que cada administrativo imprime 10 trabajos y que todos los procesos deben terminar su ejecución.
-  ``` 
-  process Administrativo[i=1..N]{
-    text archivo;
-    for (i=1..10){
-        archivo= generarArchivo();
-        send archivos(archivo);
-    }
-  }
-  process Impresora[i=1.3]{
-    int cant=10*N;
-    for (i=1..cant){
-        receive archivos(archivo);
-        imprimir(archivo);
-    }
-  }
-  ```
-  **Opción b. corregida**
    ``` 
   process Administrativo[i=1..N]{
     text archivo;
@@ -348,7 +342,7 @@ Resolver la administración de 3 impresoras de una oficina. Las impresoras son u
 
     procedure Coordinador{
         text archivo;
-        int idI cant= (N+1)*10;
+        int idI, cant= (N+1)*10;
         for(i=1..cant){
             receive impresoraLista(idI);
             receive pendienteImpresion();
@@ -382,9 +376,10 @@ Resolver la administración de 3 impresoras de una oficina. Las impresoras son u
 
 - e. Si la solución al ítem (d) implica realizar Busy Waiting, modifíquela para evitarlo.
   ```
-  No hay busy waiting.
+  No hay busy waiting en la solución d.
   ```
   
+#### Todos los ejercicios están corregidos con ayudante y están ok
 
 
 
