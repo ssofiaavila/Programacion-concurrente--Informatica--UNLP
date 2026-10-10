@@ -81,6 +81,9 @@ Se desea modelar el funcionamiento de un banco en el cual existen 5 cajas para r
 donde hay menos personas esperando; una vez seleccionada, espera a ser atendido. En cada caja, los clientes son atendidos por orden de llegada por los cajeros. Luego del pago, se les entrega un comprobante. Nota: maximizar la concurrencia.
 
 ```
+process Cliente[i=1..P]{
+
+}
 ```
 
 ### Ejercicio 3
@@ -112,7 +115,7 @@ procedure Vendedor[i=1..3]{
         send vendedorListo(i);
         receive pedidosPorTomar[i](prox, cli);
         if (prox == 'VACIO'){
-            delay(600);
+            delay(600); // podría ser un random entre 1 y 3
         } else {
             pedidosPorHacer(prox, id);
         }
@@ -124,7 +127,7 @@ procedure Coordinador{
     int idV;
     int cli;
     while (true){
-        receive vendedorListo[idV];
+        receive vendedorListo(idV);
         if (empty pedidos){
             pedido=('VACIO');
             cli=-1;
@@ -161,18 +164,225 @@ Simular la atención en un locutorio con 10 cabinas telefónicas, el cual tiene 
 Resolver la administración de 3 impresoras de una oficina. Las impresoras son usadas por N administrativos, los cuales están continuamente trabajando y cada tanto envían documentos a imprimir. Cada impresora, cuando está libre, toma un documento y lo imprime, de acuerdo con el orden de llegada.
 - a. Implemente una solución para el problema descrito.
   ```
+  chan archivos(text);
+
+  procedure Administrativo[i=1..N]{
+    text archivo;
+
+    while (true){
+        archivo= generarArchivo();
+        send archivo(archivos);
+    }
+  }
+
+  process Impresora[i=1..3]{
+    text archivo;
+
+    while (true){
+        receive archivos(archivo);
+        imprimir(archivo);
+    }
+  }
   ```
 - b. Modifique la solución implementada para que considere la presencia de un director de oficina que también usa las impresoras, el cual tiene prioridad sobre los administrativos.
   ```
+  chan archivos(text);
+  chan archivosDirector(text);
+
+  process Administrativo[i=1..N]{
+    text archivo;
+    while (true){
+        archivo= generarArchivo();
+        send archivos(archivo);
+    }
+  }
+
+  process Director{
+    text archivo;
+    while (true){
+        archivo= generarArchivo();
+        send archivosDirector(archivo);
+    }
+  }
+
+  process Impresora[i=1..3]{
+    text archivo;
+    while (true){
+        if (not empty(archivoDirector)){
+            receive archivosDirector(archivo);
+            imprimir(archivo);
+        } else {
+            if (not empty(archivos)){ // necesario sumar esta condición?
+                receive archivos(archivo);
+            }
+        }
+    }
+  }
+  ```
+  
+  **Solución b. respetando prioridad, CORRECTA**
+  ```
+  chan archivos(text);
+  chan archivosDirector(text);
+  chan pendienteImpresion();
+
+  process Administrativo[i=1..N]{
+    text archivo;
+    while (true){
+        archivo= generarArchivo();
+        send archivos(archivo);
+        send pendienteImpresion();
+
+    }
+  }
+
+  process Director{
+    text archivo;
+    while (true){
+        archivo= generarArchivo();
+        send archivosDirector(archivo);
+        send pendienteImpresion();
+    }
+  }
+
+    procedure Coordinador{
+        text archivo;
+        int idI;
+        while (true){
+            receive impresoraLista(idI);
+            receive pendienteImpresion(); // estructura de aviso cuando hay varios canales y necesitamos cierta sincronización !!!
+            if (not empty(archivoDirector)){
+                receive archivosDirector(archivo);
+            } else {
+                receive archivos(archivo);
+            }
+            send pendientesImprimir[idI](archivo);
+        }
+    }
+  process Impresora[i=1..3]{
+    text archivo;
+    while (true){
+        send impresoraLista(i);
+        receive pendientesImprimir[i](archivo);
+        imprimir(archivo);
+    }
+  }
   ```
 - c. Modifique la solución (a) considerando que cada administrativo imprime 10 trabajos y que todos los procesos deben terminar su ejecución.
   ``` 
+  process Administrativo[i=1..N]{
+    text archivo;
+    for (i=1..10){
+        archivo= generarArchivo();
+        send archivos(archivo);
+    }
+  }
+  process Impresora[i=1.3]{
+    int cant=10*N;
+    for (i=1..cant){
+        receive archivos(archivo);
+        imprimir(archivo);
+    }
+  }
+  ```
+  **Opción b. corregida**
+   ``` 
+  process Administrativo[i=1..N]{
+    text archivo;
+    for (i=1..10){
+        archivo= generarArchivo();
+        send archivos(archivo);
+    }
+  }
+  procedure Coordinador{
+        text archivo;
+        int idI, cant= N*10;
+        for (i=1..cant){
+            receive impresoraLista(idI);
+            receive archivos(archivo);
+            send pendientesImprimir[idI](archivo);
+        }
+        for(i=1..3){
+            send pendientesImprimir[i]('FINALIZAR');
+        }
+  }
+
+  process Impresora[i=1.3]{
+        text archivo;
+        boolean quedanDocs;
+
+        while(quedanDocs){
+                send impresoraLista(i);
+                receive pendientesImprimir[i](archivo);
+                if (archivo === 'FINALIZAR'){
+                    quedanDocs= false;
+                } else {
+                    imprimir(archivo);
+                }
+        }
+    }
   ```
 - d. Modifique la solución (b) considerando que tanto el director como cada administrativo imprimen 10 trabajos y que todos los procesos deben terminar su ejecución.
   ```
+  chan archivos(text);
+  chan archivosDirector(text);
+  chan pendienteImpresion();
+
+  process Administrativo[i=1..N]{
+    text archivo;
+    for (i=1..10){
+        archivo= generarArchivo();
+        send archivos(archivo);
+        send pendienteImpresion()
+    }
+  }
+
+  process Director{
+    text archivo;
+    for (i=1..10){
+        archivo= generarArchivo();
+        send archivosDirector(archivo);
+        send pendienteImpresion()
+    }
+  }
+
+    procedure Coordinador{
+        text archivo;
+        int idI cant= (N+1)*10;
+        for(i=1..cant){
+            receive impresoraLista(idI);
+            receive pendienteImpresion();
+            if (not empty(archivoDirector)){
+                receive archivosDirector(archivo);
+            } else {
+                receive archivos(archivo);
+            }
+            send pendientesImprimir[idI](archivo);
+        }
+        for(i=1..3){
+            send pendientesImprimir[i]('FINALIZAR');
+        }
+    }
+
+  process Impresora[i=1..3]{
+        text archivo;
+        boolean quedanDocs;
+
+        while(quedanDocs){
+            send impresoraLista(i);
+            receive pendientesImprimir[i](archivo);
+            if (archivo === 'FINALIZAR'){
+                quedanDocs= false;
+            } else {
+                imprimir(archivo);
+            }
+        }
+  }
   ```
+
 - e. Si la solución al ítem (d) implica realizar Busy Waiting, modifíquela para evitarlo.
   ```
+  No hay busy waiting.
   ```
   
 
