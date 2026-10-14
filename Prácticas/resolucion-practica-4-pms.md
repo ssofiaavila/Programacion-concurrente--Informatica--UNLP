@@ -6,12 +6,60 @@ Analizador se encarga de hacer todas las pruebas necesarias con cada uno de los 
 al Examinador. 
    - a. Analice el problema y defina qué procesos, recursos y comunicaciones serán necesarios/convenientes para resolverlo.
        ```
+       procesos: Examinados [R], Analizador
+       comunicaciones reportar
        ```
    - b. Implemente una solución con PMS donde el Analizador no considere el orden de los pedidos de los Examinadores.
      ```
+      process Examinador[i=1..R]{
+        text sitioInfectado, respuesta;
+
+        while (true){
+          sitioInfectado= analizarWeb();
+          Analizador!reportar(sitioInfectado);
+        }
+      }
+
+      process Analizador {
+        texto, reporte, rta;
+        
+        while (true) {
+          Examinador[*]?reportar(reporte);
+          Analizar(reporte);
+        }
+      }
+
      ```
    - c. Implemente una solución con PMS donde el Analizador sí considere el orden de los pedidos de los Examinadores
      ```
+      process Examinador [i=1..R] {
+        text sitioInfectado;
+
+        while (true) {
+          sitioInfectado= analizarWeb();
+          Admin!reportar(sitioInfectado);
+        }
+      } 
+
+      process Admin {
+        queue colaDirecciones;
+        text sitio;
+
+        do Examinador?[*]reportar(sitio) -> push(colaDirecciones, sitio);
+           not empty(colaDirecciones); Analizador?solicitarDireccion() -> pop(colaDirecciones, sitio);
+                                                                          Analizador!entregaDireccion(sitio);
+        od
+      }
+
+      process Analizador {
+        text sitio;
+
+        while (true){
+          Admin!solicitarDireccion();
+          Admin?entregaDireccion(sitio);
+          Analizar(sitio);
+        }
+      }
      ```
 
 2. En un laboratorio de genética veterinaria hay 3 empleados. El primero de ellos continuamente prepara las muestras de ADN; cada vez que termina, se la envía al segundo
