@@ -9,3 +9,4 @@ Prácticas y material de programación concurrente, cursada 2do semestre 2026- F
     * [Enunciados](https://github.com/ssofiaavila/Programacion-concurrente--Informatica--UNLP/tree/main/Pr%C3%A1cticas/Enunciados)
     * [Explicaciones](https://github.com/ssofiaavila/Programacion-concurrente--Informatica--UNLP/tree/main/Pr%C3%A1cticas/Explicaciones)
     * [Resoluciones](https://github.com/ssofiaavila/Programacion-concurrente--Informatica--UNLP/tree/main/Pr%C3%A1cticas)  
+    * [Apuntes prácticos](https://github.com/ssofiaavila/Programacion-concurrente--Informatica--UNLP/tree/main/Pr%C3%A1cticas/Apuntes)
