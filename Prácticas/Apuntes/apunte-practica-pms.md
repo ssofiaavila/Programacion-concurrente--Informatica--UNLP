@@ -332,3 +332,6 @@ Ventaja: el Admin nunca se queda trabado esperando a un proceso en particular. S
 
 ## Resumen en una frase
 > El Admin repite siempre: *"si llega un reporte, lo guardo; si tengo reportes guardados y un Mantenimiento me pide, le doy uno"*.
+
+
+# TODO sumar patrones repetidos en la práctica una vez corregida completa
