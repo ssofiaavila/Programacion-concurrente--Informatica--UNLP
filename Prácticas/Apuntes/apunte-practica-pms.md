@@ -71,6 +71,26 @@ not empty(Buffer); Mantenimiento?pedido() --> Mantenimiento!reporte(pop(Buffer))
 ```
 el guardia dice: *"solo te dejo pasar a hacer el `pop` y mandar el reporte si hay algo en el buffer **y** Mantenimiento vino a pedir"*.
 
+## B filtra, C sincroniza y S ejecuta
+Cada parte de la guarda tiene un rol distinto. **B no ejecuta nada ni se sincroniza con nadie**: es solo una pregunta de sí o no que el proceso se hace a sí mismo.
+
+| Parte | Qué es | ¿Se comunica con otro proceso? | Qué hace |
+|---|---|---|---|
+| `B` | Condición booleana | **No.** Solo mira variables locales | Decide si **me conviene** atender esto ahora |
+| `C` | Recepción (`?`) | **Sí.** Acá está la sincronización con el emisor | Recibe el mensaje, si hay alguien esperando para mandarlo |
+| `S` | Sentencias | Puede ser (por ejemplo, un `!` de respuesta) | Hace el trabajo una vez que se eligió la guarda |
+
+```
+not empty(Buffer); Mantenimiento?pedido() --> Mantenimiento!reporte(pop(Buffer));
+└──────┬───────┘   └─────────┬──────────┘     └──────────────┬──────────────────┘
+       B                     C                               S
+ "¿tengo algo        "¿Mantenimiento vino     "le saco un reporte a la
+  en la cola?"        a pedir? lo recibo"      cola y se lo mando"
+  (solo pregunta)     (se sincroniza)          (ejecuta)
+```
+
+Lo que sí hace B es **habilitar o deshabilitar** la sincronización. Si B es falsa, la guarda falla y ni siquiera se intenta la recepción. El emisor sigue esperando en su `!` hasta que, en otra vuelta del `do`, B sea verdadera.
+
 **Sobre la palabra:** se usa "guarda" de dos maneras, y las dos son válidas:
 1. **Sentido estricto:** la guarda es solo la parte de la izquierda (`B ; C`), la condición.
 2. **Sentido amplio:** se le dice "guarda" a toda la línea (`B ; C --> S`), o sea, a cada alternativa del `if`/`do`.
