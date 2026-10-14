@@ -20,11 +20,11 @@
         origen[i]?port(variable);
         origen[*]?port(variable);
     ```
-    **port** debe coincidir de etiqueta tanto en el emisor como receptor.
+    **port** debe coincidir de etiqueta tanto en el emisor como receptor. Puede no ir. Se usa para diferenciar los tipos de mensajes que se podrían comunicarse entre dos procesos.
     **[*]** es solamente usado en la recepción, indica que el origen puede ser cualquier proceso del arreglo. Si quiere contestarle a ese mismo, deberé usar algún identificador.
 
 ### Comunicación guardada
-- Uso de comunicación guardada (id y do): permite seleccionar de forma no determinística entre varias alternativas de comunicación (en caso de la práctica de la práctica SOLO RECEPCIONES) en base a las condiciones del proceso y los mensajes que están listos para ser recibidos.
+- Uso de comunicación guardada (if y do): permite seleccionar de forma no determinística entre varias alternativas de comunicación (en caso de la práctica de la práctica SOLO RECEPCIONES) en base a las condiciones del proceso y los mensajes que están listos para ser recibidos.
 - Guardas: cada alternativa es una guarda con la forma: `B;C -> S`.
     1. `B`: condición booleana que puede no estar (en ese caso se considera true), e indica si el proceso está o no en condiciones de procesar el mensaje recibido en `C`.
     2. `C`: sentencia de comunicación (en la práctica sólo RECEPCIÓN) que seguro debe estar.
@@ -38,6 +38,107 @@
     - Si todas las guardas FALLAN no se selecciona ninguna y se sale del IF sin realizar ninguna acción.
     - Si no hay ninguna guarda EXITOSA pero hay una o más con estado BLOQUEO entonces el proceso se demora en el IF hasta que haya una guarda exitosa. En ese momento se ejecuta igual que el primer caso.
 - El do **guardado** funciona de la misma manera que el IF, con la única diferencia que en lugar de hacerlo una vez repite el mecanismo hasta que todas las guardas FALLAN.
+
+### Más info comunicación guardada
+- *Guarda:* ```(condición booleana); sentencia de recepción --> sentencia a realizar;```
+Si no se especifica la confición booleana se considera verdadera (la condición booleana sólo puede hacer referencia a variables locales del proceso).
+Cada guarda tiene tres posibles estados:
+1. `Elegible` la condición booleana es verdadera y la sentencia de comunicación se puede resolver inmediatamente.
+2. `No elegible` la condición booleana es falsa.
+3. `Bloqueada` la condición booleana es verdadera y la sentencia de comunicación no se puede resolver inmediatamente.
+
+Sólo se puede usar dentro de un `if` o un `do` guardado: 
+- El `if` funciona de la siguiente manera: de todas las guardas **elegibles** se selecciona una en forma no determinística, se realiza la sentencia de comunicación correspondiente, y luego las acciones aosicadas a esa guarda. Si todas las guardas tienen el estado de **no elegibles**, se sale sin hacer nada. Si no hay ninguna guarda elegible, pero algunas están en estado **bloqueado**, se queda esperando en el if hasta que alguna se vuelva elegible.
+- El `do` funciona de la siguiente manera: sigue iterando de la misma manera que el `if` hasta que todas las guardas sean `no elegibles`.
+
+
+# Explicación simple de las guardas
+
+## ¿Qué es una guarda?
+"Guarda" viene de **guardia**: es lo que vigila la entrada a un bloque de código y decide si se puede pasar o no. Pensalo como un guardia en una puerta:
+```
+B ; C   -->   S
+└──┬──┘       └┬┘
+ guardia     lo que hay
+(¿pasás?)    detrás de la puerta
+```
+- Lo que está **antes de la flecha** (`B ; C`) es el guardia: revisa si se cumplen las condiciones para entrar.
+- Lo que está **después de la flecha** (`S`) es lo que se hace si el guardia te deja pasar.
+
+Por ejemplo, en:
+```
+not empty(Buffer); Mantenimiento?pedido() --> Mantenimiento!reporte(pop(Buffer));
+```
+el guardia dice: *"solo te dejo pasar a hacer el `pop` y mandar el reporte si hay algo en el buffer **y** Mantenimiento vino a pedir"*.
+
+**Sobre la palabra:** se usa "guarda" de dos maneras, y las dos son válidas:
+1. **Sentido estricto:** la guarda es solo la parte de la izquierda (`B ; C`), la condición.
+2. **Sentido amplio:** se le dice "guarda" a toda la línea (`B ; C --> S`), o sea, a cada alternativa del `if`/`do`.
+
+Cuando se dice "el `do` tiene dos guardas", se habla de **dos alternativas**. Cuando se dice "la guarda falla", se habla de que **la condición no se cumple** y el guardia no deja pasar. Un `if`/`do` es "guardado" porque cada alternativa tiene su propio guardia en la entrada.
+
+## El problema que resuelven: un `?` suelto te deja esperando a una sola persona
+Si el Admin del Ejemplo 2 se escribiera sin guardas:
+```
+process Admin {
+    do true ->
+        Testeo?reporte(R);  push(Buffer, R);
+        Mantenimiento?pedido();  Mantenimiento!reporte(pop(Buffer));
+    od
+}
+```
+Como la recepción es **bloqueante**, el Admin queda atado a un orden fijo:
+- Si Testeo manda 5 reportes seguidos, el Admin recibe el primero y se queda trabado en `Mantenimiento?pedido()`. Testeo no puede dejar el segundo.
+- Si Mantenimiento pide trabajo y la cola está vacía, igual intenta hacer `pop`.
+
+Lo que se necesita es que el Admin pueda decir: **"atiendo al que llegue primero, entre los que puedo atender ahora"**. Eso es la comunicación guardada.
+
+## Cada guarda son dos preguntas
+Para evaluar `B ; C --> S`, el proceso se hace dos preguntas, siempre en este orden:
+1. **¿Me conviene atender esto ahora?** Es `B`, y mira solo variables locales (por ejemplo: ¿tengo algo en la cola?).
+2. **¿Hay alguien parado esperando para mandarme esto?** Es `C`, o sea, ¿el emisor ya llegó a su `!`?
+
+| ¿B es verdadera? | ¿El emisor ya está esperando? | Estado | Traducción |
+|---|---|---|---|
+| No | (no importa) | **Fallo / No elegible** | "Esto ahora no me interesa" |
+| Sí | Sí | **Éxito / Elegible** | "Me interesa y está listo, lo puedo hacer ya" |
+| Sí | No | **Bloqueo** | "Me interesa, pero todavía no vino nadie" |
+
+Cuando `B` es falsa, ni se mira la comunicación. Por eso un Mantenimiento que pide trabajo con la cola vacía **se queda esperando en su `!`**: es un envío sincrónico y el Admin no lo acepta. No se pierde nada; va a ser atendido cuando la cola tenga algo.
+
+## Qué hace el `if` / `do` con esos estados
+Primero mira las guardas en estado **Éxito**:
+- **Hay al menos una con Éxito:** elige una cualquiera (no determinístico), hace su recepción `C` y después ejecuta `S`.
+- **No hay ninguna con Éxito, pero hay alguna en Bloqueo:** el proceso se duerme hasta que alguna pase a Éxito.
+- **Todas en Fallo:** sale sin hacer nada. El `if` termina; el `do` también termina, porque es su única condición de salida.
+
+La única diferencia entre los dos es que el `do` vuelve a empezar después de ejecutar una guarda.
+
+## Seguimiento con el Admin del Ejemplo 2
+```
+do Testeo?reporte(R) --> push(Buffer,R);
+   not empty(Buffer); Mantenimiento?pedido() --> Mantenimiento!reporte(pop(Buffer));
+od
+```
+
+| Momento | Situación | Guarda 1 (reporte) | Guarda 2 (pedido) | Qué pasa |
+|---|---|---|---|---|
+| t1 | Buffer vacío, nadie esperando | Bloqueo | **Fallo** (cola vacía) | El Admin se duerme |
+| t2 | Mantenimiento hace `Admin!pedido()` | Bloqueo | Fallo | Sigue igual. Mantenimiento queda esperando en su `!` |
+| t3 | Testeo hace `Admin!reporte(R1)` | **Éxito** | Fallo | Recibe R1 y lo encola. Buffer = [R1] |
+| t4 | Siguiente vuelta del `do` | Bloqueo | **Éxito** (cola no vacía y Mantenimiento seguía esperando desde t2) | Atiende el pedido y le manda R1 |
+| t5 | Buffer no vacío; Testeo manda un reporte y Mantenimiento pide a la vez | Éxito | Éxito | **Elige cualquiera**. La otra se atiende en la próxima vuelta |
+
+En t2, la condición `not empty(Buffer)` no rechazó a Mantenimiento: solo **postergó** su atención hasta que tuviera sentido atenderlo.
+
+## Dudas típicas
+- **¿Por qué `B` no puede usar el contenido del mensaje?** Porque `B` se evalúa **antes** de recibir. Todavía no se sabe qué van a mandar; solo se puede usar lo que el proceso ya tiene (contadores, colas, flags).
+- **¿Por qué en las guardas solo hay `?` y nunca `!`?** Es una restricción de la práctica. Por eso aparece el patrón de que el trabajador avisa con `Admin!pedido(id)`, el Admin lo recibe en una guarda y después le responde con `Mantenimiento[id]!...` dentro de `S`. Ese `!` dentro de `S` sí está permitido.
+- **¿Cuándo termina un `do`?** Solo cuando **todas** las guardas fallan, es decir, todas las `B` son falsas. Si alguna guarda no tiene `B`, cuenta como `true` y el `do` no termina nunca. Eso es justo lo que se busca para un administrador o un buffer.
+- **¿Para qué sirve que pueda terminar?** Para casos como "atender a N clientes y terminar": `cant < N; Cliente[*]?llegada(id) --> cant++`. Cuando `cant` llega a N, todas fallan y el `do` sale.
+
+## Resumen en una frase
+> La guarda es *"si me conviene (B) y alguien ya está listo para mandarme esto (C), entonces lo hago (S)"*, y el `if`/`do` elige entre todas las guardas que cumplen las dos condiciones.
 
 
 # Ejemplo 1
