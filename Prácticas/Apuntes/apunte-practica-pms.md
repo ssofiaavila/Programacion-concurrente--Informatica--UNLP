@@ -334,4 +334,281 @@ Ventaja: el Admin nunca se queda trabado esperando a un proceso en particular. S
 > El Admin repite siempre: *"si llega un reporte, lo guardo; si tengo reportes guardados y un Mantenimiento me pide, le doy uno"*.
 
 
-# TODO sumar patrones repetidos en la práctica una vez corregida completa
+# Patrones y situaciones de la práctica 4 (PMS)
+
+Resumen de lo que se repitió en los ejercicios 1 al 5. Los nombres son genéricos (Cliente, Admin, Trabajador): en cada ejercicio se reemplazan por los del enunciado.
+
+## 1. ¿Qué patrón uso? (decisión rápida)
+
+| El enunciado dice... | Patrón | Apareció en |
+|---|---|---|
+| "no importa el orden" | **A.** Servidor que recibe con `[*]` | 1b, 4a |
+| "orden de llegada" | **B.** Admin con cola | 1c, 2, 3a, 3b, 4c, 5 |
+| "de a uno por vez" / exclusión mutua | **C.** Coordinador de recurso | 4a, 4c, 5 |
+| "según el orden de su identificador" | **D.** `for` + recepción de un proceso específico | 4b |
+| una etapa produce y la siguiente consume (cadena) | **E.** Pipeline | 2 |
+| "no comienzan hasta que todos hayan llegado" | **F.** Barrera | 3c |
+| "todos los procesos deben terminar" | **G.** Situaciones de corte | 3a, 3b, 3c, 5 |
+
+## 2. Reglas que se repiten en todos los ejercicios
+1. **En las guardas sólo van recepciones (`?`)**. Los envíos (`!`) van en el cuerpo `S`, después de la flecha.
+2. **Si recibo con `[*]`, el emisor tiene que mandarme su id** (como dato del mensaje). Si no, no sé a quién contestarle.
+3. **Para respetar el orden de llegada hace falta un Admin con una cola.** El trabajador no recibe directo de los clientes: le *pide* trabajo al Admin (`Admin!pedirTrabajo()`) y el Admin le responde dentro de `S`.
+4. **El que hace el trabajo le responde directo al cliente** (`Alumno[id]!respuesta(nota)`), sin pasar por el Admin. Así el Admin queda libre para seguir atendiendo.
+5. **El Admin sólo reparte; nunca hace el trabajo pesado** (corregir, imprimir, analizar). Si lo hiciera, dejaría de recibir y se perdería concurrencia.
+6. **No se puede usar `empty` sobre canales**, pero sí sobre una cola propia del proceso (`not empty(cola)` es una condición booleana sobre una variable local).
+7. **El `!` es sincrónico**: aunque el cliente no espere una respuesta, queda bloqueado en el `!` hasta que el otro reciba. Si el servidor tarda y el cliente no debe frenarse, hace falta un Admin con cola en el medio (patrón B).
+8. Cuando se sabe cuántas veces se repite algo, usar `for (k=1..N)` en vez de `while (true)`.
+
+## 3. Patrones
+
+### A. Servidor sin orden (Ej. 1b, 4a)
+**Idea:** el servidor recibe de cualquiera con `[*]` y atiende en el orden que le toque.
+```
+process Cliente[i=1..C] {
+  Servidor!pedido(datos, i);        // mando mi id para que me puedan responder
+  Servidor?respuesta(res);          // sólo si debe esperar la respuesta
+}
+
+process Servidor {
+  while (true) {
+    Cliente[*]?pedido(datos, idC);
+    res= atender(datos);
+    Cliente[idC]!respuesta(res);
+  }
+}
+```
+**Ojo:** si el servidor tarda y los clientes no deben esperar a que termine, esta versión los frena (ver regla 7): pasar al patrón B.
+
+### B. Admin con cola: orden de llegada (Ej. 1c, 2, 3a, 3b, 4c, 5)
+**Idea:** el Admin tiene dos alternativas en un `do`: *recibir y encolar* siempre, y *entregar trabajo* sólo si hay algo en la cola y un trabajador lo pidió.
+```
+process Cliente[i=1..N] {
+  Admin!pedido(dato, i);
+  Trabajador[*]?respuesta(res);     // lo atiende cualquier trabajador, le responde directo
+}
+
+process Admin {
+  queue cola;  T dato;  int idC, idT;
+  do Cliente[*]?pedido(dato, idC) -> push(cola, (dato, idC));
+     not empty(cola); Trabajador[*]?pedirTrabajo(idT) -> pop(cola, (dato, idC));
+                                                         Trabajador[idT]!trabajo(dato, idC);
+  od
+}
+
+process Trabajador[t=1..T] {
+  T dato;  int idC;
+  while (true) {
+    Admin!pedirTrabajo(t);
+    Admin?trabajo(dato, idC);
+    res= procesar(dato);
+    Cliente[idC]!respuesta(res);
+  }
+}
+```
+**Variantes que aparecieron:**
+- **Un solo trabajador (P=1, Ej. 3a):** se saca el id y el `[*]`: `Profesor?espera()` en la guarda y `Profesor!enviar(examen, id)` en el cuerpo. Con un solo emisor no hace falta distinguir quién pidió.
+- **Varios trabajadores (P>1, Ej. 3b):** cada uno manda su id (`Admin!espero(i)`), y el Admin responde con `Profesor[idP]!enviar(...)`. Además el Alumno recibe con `Profesor[*]?respuesta(nota)`, porque no sabe cuál de los profesores lo va a corregir.
+- **El que produce no espera (Ej. 2, Ej. 5):** es el mismo Admin, funciona como buffer entre el productor y el consumidor.
+
+### C. Coordinador de recurso: exclusión mutua (Ej. 4a)
+**Idea:** el recurso (simulador, máquina, impresora) se usa de a uno porque el coordinador hace los **tres pasos completos antes de volver a recibir**: avisar, dar paso y esperar a que liberen.
+```
+process Persona[i=1..P] {
+  Empleado!avisar(i);
+  Empleado?pasar();
+  usarRecurso();
+  Empleado!liberar();
+}
+
+process Empleado {
+  int idP;
+  for (k=1..P) {
+    Persona[*]?avisar(idP);
+    Persona[idP]!pasar();
+    Persona[idP]?liberar();         // hasta que no libere, no atiende a nadie más
+  }
+}
+```
+**Clave:** la exclusión mutua no la da ningún `lock`: la da que el Empleado se queda esperando `liberar` de *esa* persona (`Persona[idP]?`, no `[*]`).
+
+**C2. Orden de llegada con el recurso exclusivo (Ej. 4c):** se separan los roles. El **Admin** guarda la cola de espera y el **Empleado** pide la siguiente persona cuando queda libre.
+```
+process Persona[i=1..P] {
+  Admin!avisar(i);
+  Empleado?pasar();
+  usarRecurso();
+  Empleado!liberar();
+}
+
+process Admin {
+  queue esperando;  int idP, llegaron= 0;
+  do llegaron < P; Persona[*]?avisar(idP) -> push(esperando, idP);
+                                              llegaron++;
+     not empty(esperando); Empleado?libre() -> pop(esperando, idP);
+                                               Empleado!enviar(idP);
+  od
+}
+
+process Empleado {
+  int idP;
+  for (k=1..P) {
+    Admin!libre();
+    Admin?enviar(idP);
+    Persona[idP]!pasar();
+    Persona[idP]?liberar();
+  }
+}
+```
+
+**C3. Todo en un solo Admin con estado `libre` (Ej. 5):** el Admin lleva una variable `libre`, la persona que está usando el recurso (`eActual`) y una cola.
+```
+process Espectador[i=1..E] {
+  Admin!llegada(i);
+  Admin?turno();
+  usarMaquina();
+  Admin!liberarMaquina();
+}
+
+process Admin {
+  boolean libre= true;
+  int idE, eActual, llegaron= 0;
+  queue cola;
+  do llegaron < E; Espectador[*]?llegada(idE) -> llegaron++;
+                                                 if (libre) {
+                                                   libre= false;
+                                                   eActual= idE;
+                                                   Espectador[idE]!turno();
+                                                 } else push(cola, idE);
+     not libre; Espectador[eActual]?liberarMaquina() -> if (empty(cola)) libre= true;
+                                                        else {
+                                                          pop(cola, idE);
+                                                          eActual= idE;
+                                                          Espectador[idE]!turno();
+                                                        }
+  od
+}
+```
+**Ojo:** la condición del `if` de la llegada es `libre` (no `empty(cola)`: la cola puede estar vacía y la máquina ocupada). Y la segunda guarda lleva `not libre` para no esperar a `eActual` cuando todavía no hay nadie usando el recurso.
+
+### D. Orden por identificador: `for` + recepción específica (Ej. 4b)
+**Idea:** no hace falta cola. El orden lo impone el `for` y el hecho de recibir de `Persona[i]` (un proceso puntual) en lugar de `Persona[*]`.
+```
+process Persona[i=1..P] {
+  Empleado!avisar();
+  Empleado?pasar();
+  usarRecurso();
+  Empleado!liberar();
+}
+
+process Empleado {
+  for (i=1..P) {
+    Persona[i]?avisar();
+    Persona[i]!pasar();
+    Persona[i]?liberar();
+  }
+}
+```
+**Ojo:** la persona i+1 queda bloqueada en su `!avisar` hasta que el Empleado llegue a su turno del `for`. No se pierde nada.
+
+### E. Pipeline: cadena de procesos (Ej. 2)
+**Idea:** cada etapa le pasa su resultado a la siguiente. Entre dos etapas se decide según si el que envía debe esperar o no.
+- **El que envía NO espera (etapa 1 → etapa 2):** va un Admin con cola en el medio (patrón B con un solo consumidor).
+- **El que envía SÍ espera el resultado (etapa 2 ↔ etapa 3):** comunicación directa pedido-respuesta, sin buffer, porque nunca habrá más de un pedido pendiente.
+```
+process Etapa1 {
+  while (true) { m= producir();  Admin!enviar(m); }
+}
+
+process Admin {                      // buffer entre etapa 1 y 2
+  queue cola;
+  do Etapa1?enviar(m) -> push(cola, m);
+     not empty(cola); Etapa2?pedir() -> pop(cola, m);
+                                        Etapa2!muestra(m);
+  od
+}
+
+process Etapa2 {
+  while (true) {
+    Admin!pedir();
+    Admin?muestra(m);
+    set= armarSet(m);
+    Etapa3!enviarSet(set);           // etapa 3 es pedido-respuesta
+    Etapa3?resultado(res);
+    archivar(res);
+  }
+}
+
+process Etapa3 {
+  while (true) {
+    Etapa2?enviarSet(set);
+    res= analizar(set);
+    Etapa2!resultado(res);
+  }
+}
+```
+
+### F. Barrera: esperar a que lleguen todos (Ej. 3c)
+**Idea:** el Admin cuenta las llegadas con un `for` y, cuando llegaron todos, los libera con otro `for`. Los procesos hacen `!avisarLlegada` y se quedan esperando en `?comenzar`.
+```
+process Alumno[i=1..N] {
+  Admin!avisarLlegada();
+  Admin?comenzar();                 // no empieza hasta que lleguen todos
+  examen= resolverExamen();
+  ...
+}
+
+process Admin {
+  for (k=1..N) Alumno[*]?avisarLlegada();     // junto a los N
+  for (k=1..N) Alumno[k]!comenzar();          // los libero a todos
+  ...                                         // sigue con el patrón B
+}
+```
+El segundo `for` no genera demora: todos los alumnos ya están bloqueados esperando el `comenzar`.
+
+### G. Situaciones de corte: que todos los procesos terminen (Ej. 3a, 3b, 3c, 5)
+Un `do` termina cuando **todas** sus guardas son falsas, y un proceso bloqueado esperando a alguien que ya no va a mandar nada **no termina**. Hay que pensar siempre quién corta y cómo:
+
+| Situación | Cómo se corta | Ejemplo |
+|---|---|---|
+| El trabajador sabe cuántas veces trabaja | `for (k=1..N)` en lugar de `while (true)` | Profesor con P=1 (3a), Empleado (4a, 4b, 4c) |
+| El Admin sabe cuántos pedidos van a llegar | Contador en la condición de la guarda de llegada: `cantE < N;` | Admin de 3a, 3b; `llegaron < E;` en 5 |
+| Hay varios trabajadores y no se sabe cuántos pedidos atiende cada uno | **Centinela:** el Admin responde `ok= false` a cada trabajador que pide cuando ya no queda nada, y el trabajador hace `while (ok)` | Ej. 3b (abajo) |
+
+**Patrón del centinela (Ej. 3b):**
+```
+process Trabajador[t=1..T] {
+  T dato;  int idC;  boolean ok;
+  Admin!espero(t);
+  Admin?enviar(dato, idC, ok);
+  while (ok) {
+    res= procesar(dato);
+    Cliente[idC]!respuesta(res);
+    Admin!espero(t);
+    Admin?enviar(dato, idC, ok);
+  }
+}
+
+process Admin {
+  queue cola;  T dato;  int idC, idT;
+  int cantE= 0, cantT= 0;           // cantE: pedidos recibidos; cantT: trabajadores ya despedidos
+  do cantE < N; Cliente[*]?pedido(dato, idC) -> push(cola, (dato, idC));
+                                                 cantE++;
+     not empty(cola); Trabajador[*]?espero(idT) -> pop(cola, (dato, idC));
+                                                    Trabajador[idT]!enviar(dato, idC, true);
+     empty(cola) && cantE == N && cantT < T; Trabajador[*]?espero(idT) -> cantT++;
+                                                                          Trabajador[idT]!enviar(-1, -1, false);
+  od
+}
+```
+**Cómo leerlo:** la tercera guarda sólo está habilitada cuando ya llegaron los N pedidos y la cola está vacía; ahí cada trabajador que pida trabajo recibe `false` y termina. Cuando se despidieron los T trabajadores (`cantT == T`) y no queda nada, todas las guardas fallan y el Admin también termina.
+
+## 4. Checklist antes de dar por terminado un ejercicio
+- [ ] ¿Hay algún `!` dentro de una guarda? Tiene que ir después de la flecha.
+- [ ] Si recibo con `[*]`, ¿el emisor manda su id?
+- [ ] Si hay varios trabajadores, ¿el cliente recibe la respuesta con `Trabajador[*]?`?
+- [ ] ¿Los mensajes coinciden entre emisor y receptor (mismo port y misma cantidad de parámetros)?
+- [ ] ¿Se puede producir un deadlock? Si A hace `B!x; B?y;` entonces B tiene que hacer `A?x; A!y;` (si los dos empiezan enviando, se bloquean).
+- [ ] ¿El Admin hace trabajo pesado? Pasárselo a un trabajador.
+- [ ] ¿Todos los procesos terminan? Revisar `while (true)`, `do` sin contador y procesos que quedan esperando un mensaje que nunca llega (patrón G).
+- [ ] ¿La guarda usa el contenido del mensaje que todavía no recibió? No se puede: la condición `B` sólo mira variables locales.
