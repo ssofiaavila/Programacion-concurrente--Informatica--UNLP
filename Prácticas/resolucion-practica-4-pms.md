@@ -113,8 +113,7 @@ profesores corrigen los exámenes respetando el orden en que los alumnos van ent
    - a. Considerando que P=1.
      ```
       process Alumno [i=1..N] {
-        text examen;
-        int nota;
+        text examen, nota;
 
         examen= resolverExamen();
         Admin!entregarExamen(examen, i);
@@ -124,10 +123,12 @@ profesores corrigen los exámenes respetando el orden en que los alumnos van ent
       process Admin {
         text examen;
         queue examenes;
-        int idA;
-        do Alumno[*]?entregarExamen(examen) -> push(examenes, (examen, idA));
-           not empty (examenes); Profesor?espera() --> pop(examenes, examen, idA);
-                                                       Profesor!enviar(examen, idA);
+        int id, cantE= 0;
+
+        do cantE < N; Alumno[*]?entregarExamen(examen, id) -> push(examenes, (examen, id));
+                                                              cantE++;
+           not empty(examenes); Profesor?espera() -> pop(examenes, (examen, id));
+                                                     Profesor!enviar(examen, id);
         od
       }
 
@@ -135,7 +136,7 @@ profesores corrigen los exámenes respetando el orden en que los alumnos van ent
         text examen;
         int nota, id;
 
-        while (true){
+        for (i=1..N) {
           Admin!espera();
           Admin?enviar(examen, id);
           nota= corregir(examen);
@@ -143,26 +144,29 @@ profesores corrigen los exámenes respetando el orden en que los alumnos van ent
         }
       }
      ```
+     *Todos los procesos deben terminar: el Profesor corrige exactamente N exámenes y el Admin termina cuando recibió los N y la cola quedó vacía.*
    - b. Considerando que P>1.
      ```
       process Alumno [i=1..N] {
-        text examen;
-        int nota;
-        
+        text examen, nota;
+
         examen= resolverExamen();
-        Admin!entregarExamen(examen,i);
+        Admin!entregarExamen(examen, i);
         Profesor?respuesta(nota);
       }
 
       process Profesor [i=1..P] {
-        text examen,
+        text examen;
         int nota, id;
+        boolean ok;
 
-        while (true){
-          Admin!espera(i);
-          Admin?enviar(examen,id);
+        Admin!espero(i);
+        Admin?enviar(examen, id, ok);
+        while (ok) {
           nota= corregir(examen);
           Alumno[id]!respuesta(nota);
+          Admin!espero(i);
+          Admin?enviar(examen, id, ok);
         }
       }
 
@@ -170,13 +174,18 @@ profesores corrigen los exámenes respetando el orden en que los alumnos van ent
         text examen;
         queue examenes;
         int idA, idP;
+        int cantE= 0, cantP= 0;
 
-        do Alumno[*]?entregarExamen(examen) -> push(examenes, (examen, idA));
-           not empty(examenes); Profesor?espera(idP); --> pop(examenes, (examen, idA));
-                                                          Profesor[idP]!enviar(examen,idA);
+        do cantE < N; Alumno[*]?entregarExamen(examen, idA) -> push(examenes, (examen, idA));
+                                                               cantE++;
+           not empty(examenes); Profesor[*]?espero(idP) -> pop(examenes, (examen, idA));
+                                                           Profesor[idP]!enviar(examen, idA, true);
+           empty(examenes) && cantE == N && cantP < P; Profesor[*]?espero(idP) -> cantP++;
+                                                                                  Profesor[idP]!enviar(-1, -1, false);
         od
       }
      ```
+     *Situación de corte: cuando ya llegaron los N exámenes y la cola está vacía, el Admin le responde `ok= false` a cada profesor que pide trabajo, así los P profesores terminan.*
    - c. Ídem b) pero considerando que los alumnos no comienzan a realizar su examen hasta que todos hayan llegado al aula.
      ```
       process Alumno [i=1..N] {
