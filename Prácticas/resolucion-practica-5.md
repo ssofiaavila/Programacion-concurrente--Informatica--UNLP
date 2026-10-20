@@ -129,8 +129,88 @@ Mismas tareas y mismos bodies de los vehículos que en a). Solo cambia el `selec
 - b. Implemente una solución donde los clientes se retiran si esperan más de 10 minutos para realizar el pago.
 - c. Implemente una solución donde los clientes se retiran si no son atendidos inmediatamente.
 - d. Implemente una solución donde los clientes esperan a lo sumo 10 minutos para ser atendidos. Si pasado ese lapso no fueron atendidos, entonces solicitan atención una vez más y se retiran si no son atendidos inmediatamente.
+
+**Análisis**
+- Tareas: una tarea `Empleado` y un arreglo de N tareas `Cliente`.
+- El cliente paga y recibe el comprobante en **un solo encuentro**: el pago entra como `IN` y el comprobante vuelve como `OUT`, y se resuelve **dentro del accept** (aprovecha la comunicación bidireccional).
+- El orden de llegada lo garantiza la cola implícita del entry `Pago` (FIFO).
+
+**a) Los clientes se retiran solo después de ser atendidos**
+```ada
+Procedure AtencionCliente is
+
+   task Empleado is
+      entry Pago (p: IN texto; comprobante: OUT texto);
+   end Empleado;
+
+   task type Cliente;
+
+   clientes: array (1..N) of Cliente;
+
+   task body Cliente is
+      comprobante: texto;
+   begin
+      Empleado.Pago("datos", comprobante);
+   end Cliente;
+
+   task body Empleado is
+   begin
+      loop
+         accept Pago (p: IN texto; comprobante: OUT texto) do
+            comprobante := resolverOperacion(p);
+         end Pago;
+      end loop;
+   end Empleado;
+
+begin
+   null;
+end AtencionCliente;
 ```
+
+**b) Los clientes se retiran si esperan más de 10 minutos**
+
+Igual que a), pero el cliente usa un **entry call temporal** (`select … or delay`). El `or delay` cuenta el tiempo hasta que el empleado **empieza** el accept: si lo empiezan a atender antes de los 10 minutos, el cliente se queda aunque el pago tarde más.
+```ada
+Procedure AtencionCliente is
+
+   task Empleado is
+      entry Pago (p: IN texto; comprobante: OUT texto);
+   end Empleado;
+
+   task type Cliente;
+
+   clientes: array (1..N) of Cliente;
+
+   task body Cliente is
+      comprobante: texto;
+   begin
+      select
+         Empleado.Pago("datos", comprobante);
+      or delay 600.0          -- 10 minutos
+         null;                -- se retira sin ser atendido
+      end select;
+   end Cliente;
+
+   task body Empleado is
+   begin
+      loop
+         accept Pago (p: IN texto; comprobante: OUT texto) do
+            comprobante := resolverOperacion(p);
+         end Pago;
+      end loop;
+   end Empleado;
+
+begin
+   null;
+end AtencionCliente;
 ```
+
+**Notas / errores a evitar**
+- Asignación con `:=` (`comprobante := resolverOperacion(p);`), no con `:`.
+- Cada `end Nombre` termina con `;`.
+- El programa es `procedure`, no `process` (eso es notación de PMA/PMS).
+- Si el `or delay` no tiene nada que hacer, igual va `null;`.
+
 3. Se dispone de un sistema compuesto por **1 central** y **2 procesos periféricos**, que se comunican continuamente. Se requiere modelar su funcionamiento considerando las siguientes condiciones:
 - La central siempre comienza su ejecución tomando una señal del proceso 1; luego toma aleatoriamente señales de cualquiera de los dos indefinidamente. Al recibir una señal de proceso 2, recibe señales del mismo proceso durante 3 minutos.
 - Los procesos periféricos envían señales continuamente a la central. La señal del proceso 1 será considerada vieja (se deshecha) si en 2 minutos no fue recibida. Si la señal del proceso 2 no puede ser recibida inmediatamente, entonces espera 1 minuto y vuelve a mandarla (no se deshecha).
