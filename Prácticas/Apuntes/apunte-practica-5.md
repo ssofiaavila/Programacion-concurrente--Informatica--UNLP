@@ -192,6 +192,122 @@ A su vez se le puede agregar al final un `ELSE` o un `OR DELAY` que actúa de fo
 
 ---
 
+## Repaso: entendiendo el rendezvous (dudas resueltas)
+
+> Sección agregada a partir de las dudas que fueron surgiendo al leer la explicación. La idea es conectar ADA con lo que ya vimos (semáforos, monitores, PMA, PMS).
+
+### ¿Qué es el rendezvous, a partir de lo que ya conozco?
+Pensalo como **un monitor, pero donde el procedimiento lo ejecuta un proceso activo que decide cuándo atender**.
+
+- **Del monitor** toma la idea de **llamar a una operación con parámetros y recibir un resultado**: el cliente hace `Empleado.Pedido(datos, resultado)` y cuando vuelve ya tiene la respuesta.
+- **De PMS** toma la idea de que **los dos procesos tienen que coincidir** (sincrónico): el que llama se bloquea hasta que lo atiendan, y el que atiende se bloquea hasta que alguien lo llame.
+
+La gran diferencia con PMS: en PMS el mensaje va en **una sola dirección**, así que pedir y responder son **dos comunicaciones**:
+```
+// PMS: ida y vuelta = 2 mensajes
+Cliente:  Empleado!pedido(datos);  Empleado?respuesta(res);
+Empleado: Cliente[*]?pedido(d);    res = resolver(d);   Cliente[id]!respuesta(res);
+```
+En rendezvous es **un solo encuentro de ida y vuelta**:
+```
+-- ADA: 1 encuentro, los datos van (IN) y el resultado vuelve (OUT)
+Cliente:   Empleado.Pedido("datos", Resultado);
+Empleado:  accept Pedido (D: IN texto; R: OUT texto) do
+               R := resolverPedido(D);
+           end Pedido;
+```
+Por eso se insiste en "aprovechar la comunicación bidireccional": si el pedido se resuelve **dentro** del `do … end` del accept, se ahorra el segundo mensaje (es lo que corrige el Ejercicio 1).
+
+### ¿Qué es el `accept`? (analogía de la ventanilla)
+`accept` es la instrucción con la que una tarea dice **"estoy lista para atender un pedido de este tipo"**. Es la contraparte del entry call.
+
+| Elemento | En el código | En la ventanilla del banco |
+|---|---|---|
+| **Entry** | `entry Pedido (...)` en la especificación | El **cartel de la ventanilla**: "acá se atienden pedidos" |
+| **Entry call** | `Empleado.Pedido("datos", Resultado);` | El **cliente que se pone en la fila** |
+| **Accept** | `accept Pedido (...) do ... end Pedido;` | El **empleado que dice "¡siguiente!"** y atiende al primero |
+
+Qué hace el `accept` al ejecutarse:
+1. Si **no hay nadie en la fila** del entry, la tarea **se queda esperando** ahí (bloqueada).
+2. Si **hay alguien**, toma al primero (orden de llegada), recibe sus datos y ejecuta lo que está entre `do` y `end`.
+3. Mientras se ejecuta ese cuerpo, **el que llamó sigue esperando**.
+4. Al llegar a `end Pedido`, se devuelven los parámetros OUT y **ambos se liberan**.
+
+Dos formas:
+- **Con cuerpo** (`accept Pedido(...) do ... end Pedido;`): cuando hay que recibir datos o devolver una respuesta.
+- **Sin cuerpo** (`accept Pedido;`): punto de encuentro puro, un "ya llegaste, seguí" (sincronización sin datos).
+
+Comparado con PMS: el `accept` es como un **`receive`** (espera a que llegue algo), pero **tiene cuerpo** para procesar el pedido y **puede devolver datos** en el mismo encuentro.
+
+### Leyendo el `task body` línea por línea
+El `task body` es **todo lo que hace la tarea**, de principio a fin (como el código de un `process` en PMS).
+```
+task body Empleado is        -- acá empieza el código del Empleado
+begin
+   loop                      -- repetir para siempre (como while(true))
+      accept Pedido (D: IN texto; R: OUT texto) do   -- atiendo al siguiente; si no hay nadie, espero
+         R := resolverPedido(D);                      -- resuelvo (el cliente SIGUE esperando)
+      end Pedido;                                     -- devuelvo R y el cliente queda libre
+   end loop;                 -- vuelvo a atender al próximo
+end Empleado;
+```
+
+Traza con dos clientes:
+
+| Momento | Empleado | Cliente 1 | Cliente 2 |
+|---|---|---|---|
+| 1 | Llega al `accept`, no hay nadie: **espera** | — | — |
+| 2 | Atiende al Cliente 1: `D = "datosC1"` | Llamó a `Empleado.Pedido("datosC1", Resultado)`: **espera** | — |
+| 3 | Ejecuta `R := resolverPedido(D)` | Sigue esperando | Llama a `Empleado.Pedido(...)`: queda **en la fila** |
+| 4 | `end Pedido`: le devuelve `R` | **Recibe `Resultado` y sigue** | Sigue en la fila |
+| 5 | Nueva vuelta del `loop`: atiende al Cliente 2 | — | Lo atienden |
+
+Del lado del cliente todo eso es **una sola línea**: `Empleado.Pedido("datos", Resultado);`. Cuando esa línea termina, `Resultado` ya tiene la respuesta.
+
+### "Parece muy secuencial", ¿dónde está la concurrencia?
+El código **de cada proceso** siempre fue secuencial (también en PMS, monitores, etc.). La concurrencia está **entre** las tareas:
+
+- **Todas las tareas corren al mismo tiempo**: N clientes y el empleado ejecutan en paralelo.
+- **Solo se sincronizan en el encuentro**: antes y después, cada uno va por su lado.
+- **Lo que está fuera del `accept` corre en paralelo** con el cliente ya liberado:
+```
+loop
+   accept Pedido (D: IN texto; R: OUT texto) do
+      R := resolverPedido(D);       -- cliente esperando
+   end Pedido;
+   registrarAtencion;               -- cliente YA liberado: esto corre en paralelo con él
+end loop;
+```
+**Regla práctica:** dentro del accept, solo lo que el cliente necesita esperar; todo lo demás, afuera (así no se reduce la concurrencia).
+
+Un servidor que atiende de a uno se ve secuencial en cualquier mecanismo. Lo que cambia respecto de PMS es que la sincronización es **más fuerte**: el cliente queda bloqueado hasta que termina el cuerpo del accept, como al llamar a un procedimiento de un monitor.
+
+### Tabla de equivalencias con lo que ya vimos
+| Concepto en ADA | Lo más parecido que ya vimos |
+|---|---|
+| `TASK` / `TASK TYPE` | `process` / `process P[1..N]` |
+| `ENTRY` (en la especificación) | Un procedimiento exportado del monitor / un canal de PMS |
+| **Entry call** `Tarea.Entry(params)` | Llamar a `monitor.proc(params)`, o `send` + `receive` en un solo paso |
+| **`accept`** | Un `receive` con cuerpo que además puede devolver datos |
+| Cola implícita del entry | Cola de entrada del monitor / canal FIFO |
+| `select … or … end select` con `when` | El `if` guardado de PMS (`cond; P?msg → …`) |
+| `Entry'count` | Parecido a `empty(canal)` de PMA, pero **solo lo consulta la dueña del entry** |
+| `select … or delay t` | Nuevo: esperar como máximo un tiempo |
+| `select … else` | Nuevo: intentar sin esperar |
+
+**Nombrado asimétrico:** el que llama tiene que saber a qué tarea llama (`Empleado.Pedido`), pero el que acepta **no sabe quién lo llamó**. Por eso, si hay que responderle después a alguien, hay que pasar su id como parámetro (ver Ejercicio 4 y el entry `Ident`).
+
+### Tips de sintaxis que confunden al principio
+- **IN**: entra a la tarea que acepta. **OUT**: vuelve al que llamó. **IN OUT**: va y vuelve.
+- En el `accept` los parámetros se **repiten completos** igual que en el `entry`.
+- Los parámetros del accept **solo existen dentro del `do … end`**: si se necesitan después, copiarlos a una variable de la tarea.
+- En el `when` **no** se pueden usar parámetros del entry (la condición se evalúa antes de saber quién viene).
+- Una tarea **solo puede hacer accept de sus propios entries** y solo ella puede consultar su `'count`.
+- Si un `else` / `or delay` no tiene nada que hacer, igual va `null;`.
+- El programa principal (`begin … end` del procedure) arranca cuando todas las tareas ya están corriendo; se usa para cosas como repartir ids (`arrClientes(i).Ident(i)`) o simplemente `null;`.
+
+---
+
 ## Ejercicio 1
 Se debe modelar la atención en un banco por medio de un único empleado. Los clientes llegan y son atendidos de acuerdo al orden de llegada.
 
