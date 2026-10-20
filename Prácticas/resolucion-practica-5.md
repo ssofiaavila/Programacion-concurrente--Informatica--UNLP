@@ -3,213 +3,181 @@
 unidades y cada camión 3 unidades. Suponga que hay una cantidad innumerable de vehículos (A autos, B camionetas y C camiones). Analice el problema y defina qué tareas,
 recursos y sincronizaciones serán necesarios/convenientes para resolverlo.
 - a. Realice la solución suponiendo que todos los vehículos tienen la misma prioridad.
+  
+
+    ```ada
+    Procedure CrucePuente is
+
+    task Puente is
+        entry EntradaAuto;
+        entry EntradaCamioneta;
+        entry EntradaCamion;
+        entry Salida (peso: IN integer);
+    end Puente;
+
+    task type Auto;
+    task type Camioneta;
+    task type Camion;
+
+    autos: array (1..A) of Auto;
+    camionetas: array (1..B) of Camioneta;
+    camiones: array (1..C) of Camion;
+
+    task body Auto is
+    begin
+        Puente.EntradaAuto;
+        -- cruzar el puente
+        Puente.Salida(1);
+    end Auto;
+
+    task body Camioneta is
+    begin
+        Puente.EntradaCamioneta;
+        -- cruzar el puente
+        Puente.Salida(2);
+    end Camioneta;
+
+    task body Camion is
+    begin
+        Puente.EntradaCamion;
+        -- cruzar el puente
+        Puente.Salida(3);
+    end Camion;
+
+    task body Puente is
+        pesoActual: integer := 0;
+    begin
+        loop
+            select
+                when (pesoActual + 1 <= 5) =>
+                accept EntradaAuto do
+                    pesoActual := pesoActual + 1;
+                end EntradaAuto;
+            or
+                when (pesoActual + 2 <= 5) =>
+                accept EntradaCamioneta do
+                    pesoActual := pesoActual + 2;
+                end EntradaCamioneta;
+            or
+                when (pesoActual + 3 <= 5) =>
+                accept EntradaCamion do
+                    pesoActual := pesoActual + 3;
+                end EntradaCamion;
+            or
+                accept Salida (peso: IN integer) do
+                pesoActual := pesoActual - peso;
+                end Salida;
+            end select;
+        end loop;
+    end Puente;
+
+    begin
+    null;
+    end CrucePuente;
+    ```
 - b. Modifique la solución para que tengan mayor prioridad los camiones que el resto de los
-vehículos.
-
-**Análisis**
-- Tareas: `Auto`, `Camioneta` y `Camion` (task types, arreglos de A, B y C) + una tarea `Puente`.
-- Recurso a proteger: el peso actual sobre el puente → variable **local** de `Puente` (no hay variables compartidas).
-- Sincronización: entrada al puente (esperar si no entra por peso) y salida (liberar peso).
-- Un entry de entrada **por tipo de vehículo**: en el `when` no se pueden usar parámetros del entry, así que el tipo lo indica el entry mismo. La salida es una sola con parámetro porque no lleva `when` (el parámetro se usa dentro del cuerpo).
-- Los vehículos cruzan **fuera** del accept para no reducir la concurrencia.
-
-**a) Misma prioridad**
-```ada
-Procedure CrucePuente is
-
-   task Puente is
-      entry EntradaAuto;
-      entry EntradaCamioneta;
-      entry EntradaCamion;
-      entry Salida (peso: IN integer);
-   end Puente;
-
-   task type Auto;
-   task type Camioneta;
-   task type Camion;
-
-   autos: array (1..A) of Auto;
-   camionetas: array (1..B) of Camioneta;
-   camiones: array (1..C) of Camion;
-
-   task body Auto is
-   begin
-      Puente.EntradaAuto;
-      -- cruzar el puente
-      Puente.Salida(1);
-   end Auto;
-
-   task body Camioneta is
-   begin
-      Puente.EntradaCamioneta;
-      -- cruzar el puente
-      Puente.Salida(2);
-   end Camioneta;
-
-   task body Camion is
-   begin
-      Puente.EntradaCamion;
-      -- cruzar el puente
-      Puente.Salida(3);
-   end Camion;
-
-   task body Puente is
-      pesoActual: integer := 0;
-   begin
-      loop
-         select
-            when (pesoActual + 1 <= 5) =>
-               accept EntradaAuto do
-                  pesoActual := pesoActual + 1;
-               end EntradaAuto;
-         or
-            when (pesoActual + 2 <= 5) =>
-               accept EntradaCamioneta do
-                  pesoActual := pesoActual + 2;
-               end EntradaCamioneta;
-         or
-            when (pesoActual + 3 <= 5) =>
-               accept EntradaCamion do
-                  pesoActual := pesoActual + 3;
-               end EntradaCamion;
-         or
-            accept Salida (peso: IN integer) do
-               pesoActual := pesoActual - peso;
-            end Salida;
-         end select;
-      end loop;
-   end Puente;
-
-begin
-   null;
-end CrucePuente;
-```
-
-**b) Prioridad a los camiones**
-
-Mismas tareas y mismos bodies de los vehículos que en a). Solo cambia el `select` del Puente: autos y camionetas entran solo si además **no hay camiones esperando** (`EntradaCamion'count = 0`). El camión solo chequea el peso y la salida sigue sin `when` (si se frenara, el peso nunca bajaría).
-```ada
-   task body Puente is
-      pesoActual: integer := 0;
-   begin
-      loop
-         select
-            when (pesoActual + 1 <= 5) and (EntradaCamion'count = 0) =>
-               accept EntradaAuto do
-                  pesoActual := pesoActual + 1;
-               end EntradaAuto;
-         or
-            when (pesoActual + 2 <= 5) and (EntradaCamion'count = 0) =>
-               accept EntradaCamioneta do
-                  pesoActual := pesoActual + 2;
-               end EntradaCamioneta;
-         or
-            when (pesoActual + 3 <= 5) =>
-               accept EntradaCamion do
-                  pesoActual := pesoActual + 3;
-               end EntradaCamion;
-         or
-            accept Salida (peso: IN integer) do
-               pesoActual := pesoActual - peso;
-            end Salida;
-         end select;
-      end loop;
-   end Puente;
-```
-
-**Notas / errores a evitar**
-- Entre las alternativas del `select` va **`or`**.
-- El `'count` se consulta sobre el **entry** (`EntradaCamion'count`), no sobre el task type.
-- Si hay un camión esperando que todavía no cabe, autos y camionetas también esperan: eso es darle prioridad.
-- Un `select` elige una alternativa solo si su `when` es verdadero **y** hay entry calls pendientes; si ninguna cumple, espera en el `select` completo (no se queda trabado en un accept).
-- Sintaxis: `pesoActual: integer := 0;` (`:` para el tipo, `:=` para asignar); los `task type` se separan con `;`; `task body Nombre is`.
-
+    vehículos.
+    ```ada
+    task body Puente is
+        pesoActual: integer := 0;
+    begin
+        loop
+            select
+                when (pesoActual + 1 <= 5) and (EntradaCamion'count = 0) =>
+                accept EntradaAuto do
+                    pesoActual := pesoActual + 1;
+                end EntradaAuto;
+            or
+                when (pesoActual + 2 <= 5) and (EntradaCamion'count = 0) =>
+                accept EntradaCamioneta do
+                    pesoActual := pesoActual + 2;
+                end EntradaCamioneta;
+            or
+                when (pesoActual + 3 <= 5) =>
+                accept EntradaCamion do
+                    pesoActual := pesoActual + 3;
+                end EntradaCamion;
+            or
+                accept Salida (peso: IN integer) do
+                pesoActual := pesoActual - peso;
+                end Salida;
+            end select;
+        end loop;
+    end Puente;
+    ```
 2. Se quiere modelar el funcionamiento de un banco, al cual llegan clientes que deben realizar un pago y retirar un comprobante. Existe un único empleado en el banco, el cual atiende de acuerdo con el orden de llegada.
 - a. Implemente una solución donde los clientes llegan y se retiran sólo después de haber sido atendidos.
+    ```ada
+    Procedure AtencionCliente is
+
+    task Empleado is
+        entry Pago (p: IN texto; comprobante: OUT texto);
+    end Empleado;
+
+    task type Cliente;
+
+    clientes: array (1..N) of Cliente;
+
+    task body Cliente is
+        comprobante: texto;
+    begin
+        Empleado.Pago("datos", comprobante);
+    end Cliente;
+
+    task body Empleado is
+    begin
+        loop
+            accept Pago (p: IN texto; comprobante: OUT texto) do
+                comprobante := resolverOperacion(p);
+            end Pago;
+        end loop;
+    end Empleado;
+
+    begin
+    null;
+    end AtencionCliente;
+    ```
 - b. Implemente una solución donde los clientes se retiran si esperan más de 10 minutos para realizar el pago.
+  ```ada
+    Procedure AtencionCliente is
+
+    task Empleado is
+        entry Pago (p: IN texto; comprobante: OUT texto);
+    end Empleado;
+
+    task type Cliente;
+
+    clientes: array (1..N) of Cliente;
+
+    task body Cliente is
+        comprobante: texto;
+    begin
+        select
+            Empleado.Pago("datos", comprobante);
+        or delay 600.0          -- 10 minutos
+            null;                -- se retira sin ser atendido
+        end select;
+    end Cliente;
+
+    task body Empleado is
+    begin
+        loop
+            accept Pago (p: IN texto; comprobante: OUT texto) do
+                comprobante := resolverOperacion(p);
+            end Pago;
+        end loop;
+    end Empleado;
+
+    begin
+    null;
+    end AtencionCliente;
+    ```
+
 - c. Implemente una solución donde los clientes se retiran si no son atendidos inmediatamente.
 - d. Implemente una solución donde los clientes esperan a lo sumo 10 minutos para ser atendidos. Si pasado ese lapso no fueron atendidos, entonces solicitan atención una vez más y se retiran si no son atendidos inmediatamente.
 
-**Análisis**
-- Tareas: una tarea `Empleado` y un arreglo de N tareas `Cliente`.
-- El cliente paga y recibe el comprobante en **un solo encuentro**: el pago entra como `IN` y el comprobante vuelve como `OUT`, y se resuelve **dentro del accept** (aprovecha la comunicación bidireccional).
-- El orden de llegada lo garantiza la cola implícita del entry `Pago` (FIFO).
 
-**a) Los clientes se retiran solo después de ser atendidos**
-```ada
-Procedure AtencionCliente is
 
-   task Empleado is
-      entry Pago (p: IN texto; comprobante: OUT texto);
-   end Empleado;
-
-   task type Cliente;
-
-   clientes: array (1..N) of Cliente;
-
-   task body Cliente is
-      comprobante: texto;
-   begin
-      Empleado.Pago("datos", comprobante);
-   end Cliente;
-
-   task body Empleado is
-   begin
-      loop
-         accept Pago (p: IN texto; comprobante: OUT texto) do
-            comprobante := resolverOperacion(p);
-         end Pago;
-      end loop;
-   end Empleado;
-
-begin
-   null;
-end AtencionCliente;
-```
-
-**b) Los clientes se retiran si esperan más de 10 minutos**
-
-Igual que a), pero el cliente usa un **entry call temporal** (`select … or delay`). El `or delay` cuenta el tiempo hasta que el empleado **empieza** el accept: si lo empiezan a atender antes de los 10 minutos, el cliente se queda aunque el pago tarde más.
-```ada
-Procedure AtencionCliente is
-
-   task Empleado is
-      entry Pago (p: IN texto; comprobante: OUT texto);
-   end Empleado;
-
-   task type Cliente;
-
-   clientes: array (1..N) of Cliente;
-
-   task body Cliente is
-      comprobante: texto;
-   begin
-      select
-         Empleado.Pago("datos", comprobante);
-      or delay 600.0          -- 10 minutos
-         null;                -- se retira sin ser atendido
-      end select;
-   end Cliente;
-
-   task body Empleado is
-   begin
-      loop
-         accept Pago (p: IN texto; comprobante: OUT texto) do
-            comprobante := resolverOperacion(p);
-         end Pago;
-      end loop;
-   end Empleado;
-
-begin
-   null;
-end AtencionCliente;
-```
-
-**Notas / errores a evitar**
-- Asignación con `:=` (`comprobante := resolverOperacion(p);`), no con `:`.
-- Cada `end Nombre` termina con `;`.
-- El programa es `procedure`, no `process` (eso es notación de PMA/PMS).
-- Si el `or delay` no tiene nada que hacer, igual va `null;`.
 
 3. Se dispone de un sistema compuesto por **1 central** y **2 procesos periféricos**, que se comunican continuamente. Se requiere modelar su funcionamiento considerando las siguientes condiciones:
 - La central siempre comienza su ejecución tomando una señal del proceso 1; luego toma aleatoriamente señales de cualquiera de los dos indefinidamente. Al recibir una señal de proceso 2, recibe señales del mismo proceso durante 3 minutos.
