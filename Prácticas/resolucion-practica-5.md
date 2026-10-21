@@ -355,7 +355,71 @@ recursos y sincronizaciones serán necesarios/convenientes para resolverlo.
     Cuando una *persona* necesita que la atiendan espera a lo sumo 5 minutos a que el médico lo haga, si pasado ese tiempo no lo hace, espera 10 minutos y vuelve a requerir la atención del médico. Si no es atendida tres veces, se enoja y se retira de la clínica.
     Cuando una *enfermera* requiere la atención del médico, si este no lo atiende inmediatamente le hace una nota y se la deja en el consultorio para que esta resuelva su pedido en el momento que pueda (el pedido puede ser que el médico le firme algún papel). Cuando la petición ha sido recibida por el médico o la nota ha sido dejada en el escritorio, continúa trabajando y haciendo más peticiones.
     El *médico* atiende los pedidos dándole prioridad a los enfermos que llegan para ser atendidos. Cuando atiende un pedido, recibe la solicitud y la procesa durante un cierto tiempo. Cuando está libre aprovecha a procesar las notas dejadas por las enfermeras.
-    ```
+    ```ada
+    process Clinica is
+        task Medico is
+            entry atencionP;
+            entry atencionE;
+            entry notaE(nota: IN text);
+        end Medico;
+
+        task type Enfermera;
+        task type Paciente;
+        enfermeras: array(1..E) of Enfermera;
+        pacientes: array(1..P) of Paciente;
+
+        task body Paciente is
+            atendido: boolean:= false;
+            intentos: integer:= 0;
+        begin
+            while (not atendido) AND (intentos < 3) loop
+                select
+                    Medico.atencionP;
+                    atentido:= true;
+                or delay 300.0
+                    intentos:= intentos + 1;
+                end select;
+                delay 600.0;
+            end loop;
+        end Paciente;
+
+        task body Enfermero is
+            nota: text;
+        begin
+            loop
+                select
+                    Medico.atencionE;
+                else
+                    nota:= generarNota();
+                    Medico.notaE;
+                end select;
+            end loop;
+        end Enfermero;
+
+        task body Medico is
+            nota: text;
+        begin
+            loop
+                select
+                    accept atencionP do
+                        delay atencion;
+                    end atencionP;
+                or when (atencionP'count = 0) =>
+                    accept atencionE do
+                        delay atencion;
+                    end atencionE;
+                or when (atencionP'count = 0) AND (atencionE'count = 0) =>
+                    accept notaE(nota: IN text) do 
+                        procesar(nota);
+                    notaE;
+                end select;
+            end loop;
+        end Medico;
+
+        begin
+            null;
+        end Clinica;
+
     ```
 5. En un sistema para acreditar carreras universitarias, hay UN Servidor que atiende pedidos de U Usuarios de a uno a la vez y de acuerdo con el orden en que se hacen los pedidos. Cada usuario trabaja en el documento a presentar, y luego lo envía al servidor; espera la respuesta de este que le indica si está todo bien o hay algún error. Mientras haya algún error, vuelve a trabajar con el documento y a enviarlo al servidor. Cuando el servidor le responde que está todo bien, el usuario se retira. Cuando un usuario envía un pedido espera a lo sumo 2 minutos a que sea recibido por el servidor, pasado ese tiempo espera un minuto y vuelve a intentarlo (usando el mismo documento).
     ```
