@@ -251,7 +251,105 @@ recursos y sincronizaciones serán necesarios/convenientes para resolverlo.
 3. Se dispone de un sistema compuesto por **1 central** y **2 procesos periféricos**, que se comunican continuamente. Se requiere modelar su funcionamiento considerando las siguientes condiciones:
    - La central siempre comienza su ejecución tomando una señal del proceso 1; luego toma aleatoriamente señales de cualquiera de los dos indefinidamente. Al recibir una señal de proceso 2, recibe señales del mismo proceso durante 3 minutos.
    - Los procesos periféricos envían señales continuamente a la central. La señal del proceso 1 será considerada vieja (se deshecha) si en 2 minutos no fue recibida. Si la señal del proceso 2 no puede ser recibida inmediatamente, entonces espera 1 minuto y vuelve a mandarla (no se deshecha).
-    ```
+    ```ada
+    Procedure Sistema is
+
+   task Central is
+      entry Senal1 (s: IN texto);
+      entry Senal2 (s: IN texto);
+      entry FinTiempo;
+   end Central;
+
+   task Timer is
+      entry Iniciar;
+   end Timer;
+
+   task Periferico1;
+   task Periferico2;
+
+   task body Periferico1 is
+      senal: texto;
+   begin
+      loop
+         senal := generarSenal();
+         select
+            Central.Senal1(senal);
+         or delay 120.0          -- 2 minutos
+            null;                -- la señal se considera vieja: se descarta
+         end select;
+      end loop;
+   end Periferico1;
+
+   task body Periferico2 is
+      senal: texto;
+      enviada: boolean;
+   begin
+      loop
+         senal := generarSenal();
+         enviada := false;
+         while (not enviada) loop
+            select
+               Central.Senal2(senal);
+               enviada := true;
+            else
+               delay 60.0;       -- espera 1 minuto y reintenta con la MISMA señal
+            end select;
+         end loop;
+      end loop;
+   end Periferico2;
+
+   task body Timer is
+   begin
+      loop
+         accept Iniciar;
+         delay 180.0;            -- cuenta 3 minutos
+         Central.FinTiempo;      -- avisa que se terminó el tiempo
+      end loop;
+   end Timer;
+
+   task body Central is
+      senal: texto;
+      fin: boolean;
+   begin
+      -- siempre comienza tomando una señal del proceso 1
+      accept Senal1 (s: IN texto) do
+         senal := s;
+      end Senal1;
+      procesar(senal);
+
+      loop
+         select
+            accept Senal1 (s: IN texto) do
+               senal := s;
+            end Senal1;
+            procesar(senal);
+         or
+            accept Senal2 (s: IN texto) do
+               senal := s;
+            end Senal2;
+            procesar(senal);
+
+            -- durante 3 minutos recibe solo señales del proceso 2
+            Timer.Iniciar;
+            fin := false;
+            while (not fin) loop
+               select
+                  accept Senal2 (s: IN texto) do
+                     senal := s;
+                  end Senal2;
+                  procesar(senal);
+               or
+                  accept FinTiempo;
+                  fin := true;
+               end select;
+            end loop;
+         end select;
+      end loop;
+   end Central;
+
+    begin
+        null;
+    end Sistema;
     ```
 4. En una clínica existe un **médico** de guardia que recibe continuamente peticiones de atención de las **E enfermeras** que trabajan en su piso y de las **P personas** que llegan a la clínica ser atendidos.
     Cuando una *persona* necesita que la atiendan espera a lo sumo 5 minutos a que el médico lo haga, si pasado ese tiempo no lo hace, espera 10 minutos y vuelve a requerir la atención del médico. Si no es atendida tres veces, se enoja y se retira de la clínica.
