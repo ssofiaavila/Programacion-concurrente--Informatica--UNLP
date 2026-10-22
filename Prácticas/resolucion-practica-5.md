@@ -422,7 +422,45 @@ recursos y sincronizaciones serán necesarios/convenientes para resolverlo.
 
     ```
 5. En un sistema para acreditar carreras universitarias, hay UN Servidor que atiende pedidos de U Usuarios de a uno a la vez y de acuerdo con el orden en que se hacen los pedidos. Cada usuario trabaja en el documento a presentar, y luego lo envía al servidor; espera la respuesta de este que le indica si está todo bien o hay algún error. Mientras haya algún error, vuelve a trabajar con el documento y a enviarlo al servidor. Cuando el servidor le responde que está todo bien, el usuario se retira. Cuando un usuario envía un pedido espera a lo sumo 2 minutos a que sea recibido por el servidor, pasado ese tiempo espera un minuto y vuelve a intentarlo (usando el mismo documento).
-    ```
+    ```ada
+    process Universidad is
+        task Servidor is
+            entry recibirDoc(doc: IN text, ok: OUT boolean);
+        end Servidor;
+
+        task type Estudiante;
+        estudiantes: array (1..U) of Estudiante;
+
+        task body Estudiante is
+            dni: text;
+            aceptado: boolean:= false;
+            recibido: boolean:= false;
+        begin
+            while (not aceptado) loop
+                doc:= prepararDoc();
+                while (not recibido) loop
+                    select
+                        Servidor.recibirDoc(doc, aceptado);
+                        recibido:= true;
+                    or delay 120.0;
+                    end select;
+                    delay 60.0;
+                end loop;
+            end loop;
+        end Estudiante;
+
+        task body Servidor is
+        begin
+            loop
+                accept recibirDoc(doc: IN text, ok: OUT boolean) do
+                    ok:= procesarDoc(doc);
+                end recibirDoc;
+            end loop;
+        end Servidor;
+
+    begin
+        null;
+    end Universidad;
     ```
 6. En una playa hay 5 equipos de 4 personas cada uno (en total son 20 personas donde cada una conoce previamente a que equipo pertenece). Cuando las personas van llegando esperan con los de su equipo hasta que el mismo esté completo (hayan llegado los 4 integrantes), a partir de ese momento el equipo comienza a jugar. El juego consiste en que cada integrante del grupo junta 15 monedas de a una en una playa (las monedas pueden ser de 1, 2 o 5 pesos) y se suman los montos de las 60 monedas conseguidas en el grupo. Al finalizar cada persona debe conocer el grupo que más dinero junto. **Nota:** maximizar la concurrencia. Suponga que para simular la búsqueda de una moneda por parte de una persona existe una función *Moneda()* que retorna el valor de la moneda encontrada.
     ```
