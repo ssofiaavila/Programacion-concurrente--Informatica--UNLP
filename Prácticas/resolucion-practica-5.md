@@ -464,13 +464,244 @@ recursos y sincronizaciones serán necesarios/convenientes para resolverlo.
     ```
 6. En una playa hay 5 equipos de 4 personas cada uno (en total son 20 personas donde cada una conoce previamente a que equipo pertenece). Cuando las personas van llegando esperan con los de su equipo hasta que el mismo esté completo (hayan llegado los 4 integrantes), a partir de ese momento el equipo comienza a jugar. El juego consiste en que cada integrante del grupo junta 15 monedas de a una en una playa (las monedas pueden ser de 1, 2 o 5 pesos) y se suman los montos de las 60 monedas conseguidas en el grupo. Al finalizar cada persona debe conocer el grupo que más dinero junto. **Nota:** maximizar la concurrencia. Suponga que para simular la búsqueda de una moneda por parte de una persona existe una función *Moneda()* que retorna el valor de la moneda encontrada.
     ```
+    process JuntarMonedas is
+        task Persona is
+            entry resultadoJuego(ganador: IN integer);
+        end Persona;
+
+        task Equipo is
+            entry avisarLlegada;
+            entry iniciarJuego;
+        end Equipo;
+
+        task Contador is
+            entry monadasJuntadas(nroEquipo: IN integer, monto: IN integer);
+        end Contador;
+
+        task Contador;
+        personas: array (1..20) of Persona;
+        equipos: array(1..5) of Equipo;
+
+        task body of Persona is
+            nroGrupo: integer;
+            monto: integer:= 0;
+        begin
+            nroGrupo:= obtenerGrupo;
+            equipo(nroGrupo).avisarLlegada;
+            equipo(nroGrupo).iniciarJuego;
+            for (1..15) loop
+                monto:= monto + Moneda();
+            end loop
+            Contador.monedasJuntadas(nroGrupo, monto);
+            accept resultadoJuego(ganador: IN integer);
+        end Persona;
+
+        task body of  Equipo is
+        begin
+            for(i:=1..4) loop
+                accept avisarLlegada;
+            end loop;
+            for (i:=1..4) loop
+                accept iniciarJuego;
+            end loop;
+        end Equipo;
+
+        task body of Contador is
+            equipos array(1..5) of integer:= (others => 0);
+            ganador: integer;
+        begin
+            for (i:=1..20) loop
+                accept mondasJuntadas(nroEquipo: IN integer, monto: IN integer) do
+                    equipos(nroEquipo):= equipos(nroEquipo)+ monto;
+                end monedasJuntadas;
+            end loop;
+            ganador:= calcularGanador(equipos);
+            for (i:=1..20) loop
+                personas(i).resultadoJuego(ganador);
+            end loop;
+        end Contador;
+
+        begin
+            null;
+        end JuntarMonedas;         
+                                                                                                                                                                                       
     ```
 7. Se debe calcular el valor promedio de un vector de 1 millón de números enteros que se encuentra distribuido entre 10 procesos Worker (es decir, cada Worker tiene un vector de 100 mil números). Para ello, existe un Coordinador que determina el momento en que se debe realizar el cálculo de este promedio y que, además, se queda con el resultado. **Nota:** maximizar la concurrencia; este cálculo se hace una sola vez.
-    ```
+    ```ada
+        process Contador is
+            task Worker is
+                entry iniciar;
+            end Worker;
+
+            task Coordinador is
+                entry sumatoria(suma: IN integer);
+            end Coordinador;
+
+            task Coordinador;
+            task type Worker;
+            workers: array(1..10) of worker;
+
+            task body of Worker is
+                nros: array(1..100000) of integer;
+                total: integer:= 0;
+            begin
+                accept iniciar;
+                for(i:=1..100000) loop
+                    total:= nros(i) + total;
+                end loop;
+                Coordinador.sumatoria(total);
+            end Worker;
+
+            task body of Coordinador is
+                total: integer:= 0;
+                promedio: integer;
+            begin
+                for (i:=1..10) loop
+                    accept sumatoria(suma: IN integer) do
+                        total:= total + suma;
+                    end sumatoria;
+                end loop
+                promedio:= total/10;
+            end Coordinador;
+
+            begin
+                null;
+            end Contador;
     ```
 8. Hay un sistema de reconocimiento de huellas dactilares de la policía que tiene 8 Servidores para realizar el reconocimiento, cada uno de ellos trabajando con una Base de Datos propia; a su vez hay un Especialista que utiliza indefinidamente. El sistema funciona de la siguiente manera: el Especialista toma una imagen de una huella (TEST) y se la envía a los servidores para que cada uno de ellos le devuelva el código y el valor de similitud de la huella que más se asemeja a TEST en su BD; al final del procesamiento, el especialista debe conocer el código de la huella con mayor valor de similitud entre las devueltas por los 8 servidores. Cuando ha terminado de procesar una huella comienza nuevamente todo el ciclo. **Nota:** suponga que existe una función *Buscar(test, código, valor)* que utiliza cada Servidor donde recibe como parámetro de entrada la huella test, y devuelve como parámetros de salida el código y el valor de similitud de la huella más parecida a test en la BD correspondiente. Maximizar la concurrencia y no generar demora innecesaria.
-    ```
+    ```ada
+    process HuellasDactilares is
+        task Especialista is
+            resultado(valor: IN integer, codigo: IN integer);
+        end Especialista;
+
+        task Servidor is
+            analizarHuella(test: IN text);
+        end Servidor;
+        
+        task Especialista;
+        task type Servidor;
+        servidores: array(1..8) of Servidor;
+
+        task body of Especialista is
+            codigo_max, valor_max: integer:= 0;
+            text: text;
+        begin
+            loop
+                test:= tomarImagen();
+                for (i:= 1..8) loop
+                    servidores(i).analizarHuella(test);
+                end loop;
+                for (i:=1..8) loop
+                    accept resultado(valor: IN integer, codigo: IN integer) do
+                        if (valor > valor_max) then
+                            valor_max:= valor;
+                            codigo_max:= codigo;
+                        end if;
+                    end resultado;
+                end loop;
+            end loop;
+        end Especialista;
+
+        task body of Servidor do
+            test: text;
+            codigo,valor: interger;
+        begin
+            loop
+                accept analizarHuella (test: IN text) do
+                    Buscar(test, codigo, valor);
+                    Especialista.resultado(valor,codigo);
+                end analizarHuella;
+            end loop;
+        end Servidor;
+
+        begin
+            null;
+        end HuellasDactilares;
     ```
 9. Una empresa de limpieza se encarga de recolectar residuos en una ciudad por medio de 3 camiones. Hay P personas que hacen reclamos continuamente hasta que uno de los camiones pase por su casa. Cada persona hace un reclamo y espera a lo sumo 15 minutos a que llegue un camión; si no pasa, vuelve a hacer el reclamo y a esperar a lo sumo 15 minutos a que llegue un camión; y así sucesivamente hasta que el camión llegue y recolecte los residuos. Sólo cuando un camión llega, es cuando deja de hacer reclamos y se retira. Cuando un camión está libre la empresa lo envía a la casa de la persona que más reclamos ha hecho sin ser atendido. **Nota:** maximizar la concurrencia.
-    ```
+    ```ada
+    procedure Recoleccion is
+
+        task Empresa is
+            entry Reclamo (id: IN integer);
+            entry Siguiente (idP: OUT integer);
+        end Empresa;
+
+        task type Persona is
+            entry Ident (pos: IN integer);
+            entry Llegada;
+        end Persona;
+
+        task type Camion;
+
+        personas: array (1..P) of Persona;
+        camiones: array (1..3) of Camion;
+
+        task body Persona is
+            miId: integer;
+            atendida: boolean := false;
+        begin
+            accept Ident (pos: IN integer) do
+                miId := pos;
+            end Ident;
+            while (not atendida) loop
+                Empresa.Reclamo(miId);
+                select
+                    accept Llegada;              -- llegó un camión
+                    atendida := true;
+                or delay 900.0                  -- 15 minutos sin camión
+                    null;                        -- vuelve a reclamar
+                end select;
+            end loop;
+        end Persona;
+
+        task body Camion is
+            idP: integer;
+        begin
+            loop
+                Empresa.Siguiente(idP);         -- a qué casa ir
+                personas(idP).Llegada;          -- llega a la casa
+                -- recolectar los residuos
+            end loop;
+        end Camion;
+
+        task body Empresa is
+            reclamos: array (1..P) of integer := (others => 0);
+            asignada: array (1..P) of boolean := (others => false);
+            cantPend: integer := 0;            -- personas con reclamos sin camión asignado
+            max: integer;
+        begin
+            loop
+                select
+                    accept Reclamo (id: IN integer) do
+                    if (not asignada(id)) then
+                        if (reclamos(id) = 0) then
+                            cantPend := cantPend + 1;
+                        end if;
+                        reclamos(id) := reclamos(id) + 1;
+                    end if;
+                    end Reclamo;
+                or
+                    when (cantPend > 0) =>
+                    accept Siguiente (idP: OUT integer) do
+                        max := 0;
+                        for i in 1..P loop
+                            if (not asignada(i)) and (reclamos(i) > max) then
+                                max := reclamos(i);
+                                idP := i;
+                            end if;
+                        end loop;
+                        asignada(idP) := true;
+                        cantPend := cantPend - 1;
+                    end Siguiente;
+                end select;
+            end loop;
+        end Empresa;
+
+        begin
+        for i in 1..P loop
+            personas(i).Ident(i);
+        end loop;
+        end Recoleccion;
     ```
