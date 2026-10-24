@@ -355,72 +355,125 @@ recursos y sincronizaciones serán necesarios/convenientes para resolverlo.
     Cuando una *persona* necesita que la atiendan espera a lo sumo 5 minutos a que el médico lo haga, si pasado ese tiempo no lo hace, espera 10 minutos y vuelve a requerir la atención del médico. Si no es atendida tres veces, se enoja y se retira de la clínica.
     Cuando una *enfermera* requiere la atención del médico, si este no lo atiende inmediatamente le hace una nota y se la deja en el consultorio para que esta resuelva su pedido en el momento que pueda (el pedido puede ser que el médico le firme algún papel). Cuando la petición ha sido recibida por el médico o la nota ha sido dejada en el escritorio, continúa trabajando y haciendo más peticiones.
     El *médico* atiende los pedidos dándole prioridad a los enfermos que llegan para ser atendidos. Cuando atiende un pedido, recibe la solicitud y la procesa durante un cierto tiempo. Cuando está libre aprovecha a procesar las notas dejadas por las enfermeras.
+
+    **Análisis**
+    - Tareas: `Medico`, un arreglo de `Paciente` (P), un arreglo de `Enfermera` (E), un `Escritorio` que guarda las notas y un `Secretario` que se las lleva al médico.
+    - Prioridad a los pacientes: `atencionE` solo se acepta si `atencionP'count = 0`.
+    - Las notas se procesan "cuando el médico está libre": `notaE` solo se acepta si no hay pacientes ni enfermeras esperando.
+    - El `Escritorio` desacopla a la enfermera del médico: deja la nota y sigue trabajando, sin esperar a que el médico la procese.
+
     ```ada
-    process Clinica is
+    procedure Clinica is
+
         task Medico is
             entry atencionP;
             entry atencionE;
-            entry notaE(nota: IN text);
+            entry notaE (nota: IN texto);
         end Medico;
 
+        task Escritorio is
+            entry dejarNota (nota: IN texto);
+            entry pedirNota (nota: OUT texto);
+        end Escritorio;
+
+        task Secretario;
         task type Enfermera;
         task type Paciente;
-        enfermeras: array(1..E) of Enfermera;
-        pacientes: array(1..P) of Paciente;
+
+        enfermeras: array (1..E) of Enfermera;
+        pacientes: array (1..P) of Paciente;
 
         task body Paciente is
-            atendido: boolean:= false;
-            intentos: integer:= 0;
+            atendido: boolean := false;
+            intentos: integer := 0;
         begin
-            while (not atendido) AND (intentos < 3) loop
+            while (not atendido) and (intentos < 3) loop
                 select
                     Medico.atencionP;
-                    atentido:= true;
-                or delay 300.0
-                    intentos:= intentos + 1;
+                    atendido := true;
+                or delay 300.0                      -- 5 minutos
+                    intentos := intentos + 1;
+                    if (intentos < 3) then
+                        delay 600.0;                -- espera 10 minutos y reintenta
+                    end if;
                 end select;
-                delay 600.0;
             end loop;
+            -- si no fue atendido: se enoja y se retira
         end Paciente;
 
-        task body Enfermero is
-            nota: text;
+        task body Enfermera is
+            nota: texto;
         begin
             loop
                 select
                     Medico.atencionE;
                 else
-                    nota:= generarNota();
-                    Medico.notaE;
+                    nota := generarNota();
+                    Escritorio.dejarNota(nota);     -- deja la nota y sigue trabajando
                 end select;
             end loop;
-        end Enfermero;
+        end Enfermera;
+
+        task body Escritorio is
+            notas: cola;
+        begin
+            loop
+                select
+                    accept dejarNota (nota: IN texto) do
+                        push(notas, nota);
+                    end dejarNota;
+                or
+                    when (not empty(notas)) =>
+                        accept pedirNota (nota: OUT texto) do
+                            pop(notas, nota);
+                        end pedirNota;
+                end select;
+            end loop;
+        end Escritorio;
+
+        task body Secretario is
+            nota: texto;
+        begin
+            loop
+                Escritorio.pedirNota(nota);         -- espera a que haya una nota
+                Medico.notaE(nota);                 -- espera a que el médico esté libre
+            end loop;
+        end Secretario;
 
         task body Medico is
-            nota: text;
         begin
             loop
                 select
                     accept atencionP do
-                        delay atencion;
+                        atender();                  -- recibe la solicitud y la procesa un tiempo
                     end atencionP;
-                or when (atencionP'count = 0) =>
-                    accept atencionE do
-                        delay atencion;
-                    end atencionE;
-                or when (atencionP'count = 0) AND (atencionE'count = 0) =>
-                    accept notaE(nota: IN text) do 
-                        procesar(nota);
-                    notaE;
+                or
+                    when (atencionP'count = 0) =>
+                        accept atencionE do
+                            atender();
+                        end atencionE;
+                or
+                    when (atencionP'count = 0) and (atencionE'count = 0) =>
+                        accept notaE (nota: IN texto) do
+                            procesar(nota);
+                        end notaE;
                 end select;
             end loop;
         end Medico;
 
-        begin
-            null;
-        end Clinica;
-
+    begin
+        null;
+    end Clinica;
     ```
+
+    **Notas / errores a evitar**
+    - El programa es `procedure`, no `process`; y el body es `task body Medico is` (no `do`).
+    - La guarda del Escritorio es `when (not empty(notas))`: si fuera `empty(notas)`, el Secretario podría sacar de una cola vacía.
+    - El Secretario necesita `begin`, su variable `nota` y un `loop` (si no, lleva una sola nota y termina).
+    - Cada tarea se declara una sola vez (el `Escritorio` ya está declarado con sus entries).
+    - El paciente espera los 10 minutos **solo si no fue atendido y le quedan intentos**: así no espera de más cuando lo atienden ni después del tercer intento fallido. En ADA el `if` es `if (...) then ... end if;` (no `->`).
+    - Los `accept` con cuerpo cierran con el nombre del entry: `end dejarNota;`.
+
 5. En un sistema para acreditar carreras universitarias, hay UN Servidor que atiende pedidos de U Usuarios de a uno a la vez y de acuerdo con el orden en que se hacen los pedidos. Cada usuario trabaja en el documento a presentar, y luego lo envía al servidor; espera la respuesta de este que le indica si está todo bien o hay algún error. Mientras haya algún error, vuelve a trabajar con el documento y a enviarlo al servidor. Cuando el servidor le responde que está todo bien, el usuario se retira. Cuando un usuario envía un pedido espera a lo sumo 2 minutos a que sea recibido por el servidor, pasado ese tiempo espera un minuto y vuelve a intentarlo (usando el mismo documento).
     ```ada
     process Universidad is
