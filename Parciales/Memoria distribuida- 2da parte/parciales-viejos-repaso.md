@@ -1,22 +1,229 @@
 # Parcial 2 | Enunciados viejos
 # PMA
  1. En un estadio de fútbol se dará un recital al que asistirán P personas. Para ello, cada asistente debe retirar su entrada por alguna de las 3 boleterías del estadio presentando su DNI (cada persona retira una única entrada). Los asistentes son atendidos por orden de llegada por alguno de los 3 empleados del club (cada empleado atiende una boletería). Implemente una solución usando PMA, considerando que los empleados atienden infinitamente. Notas: maximizar la concurrencia. La función obtenerEntrada(dni) le retorna al empleado la entrada para el DNI provisto por argumento; la función obtenerDNI() retorna el DNI para la persona que la invoca.
+```
+        chan comprarEntrada(integer, integer);
+        chan entradas[1..P](text);
 
+        process Persona[i=1..P]{
+            int dni;
+            text entrada;
+
+            send comprarEntrada(dni,i);
+            receive entradas[i](entrada);
+        }
+
+        process Empleado [i=1..3]{
+            int dni, aux;
+            text entrada;
+            
+            while (true){
+                receive comprarEntrada(dni, aux);
+                entrada= obtenerEntrada(dni);
+                entradas[aux](entrada);
+            }
+        }
+```
+> **A tener en cuenta acá***
+> En un principio lo había resuelto con un proceso intermedio admin pero NO es necesario porque usan un canal común para ir tomando las peticiones de los clientes.
+> Un admin se usa cuando
+> - Hay prioridades
+> - El empleado tiene que hacer otra cosa si no hay nadie esperando
+> - Hay una terminación
+> - Otro orden que no sea el de llegada
+> - Saber qué recurso usar
  2. En un estadio de fútbol se dará un recital al que asistirán P personas. Para ello, cada asistente debe retirar su entrada por alguna de las 3 boleterías del estadio presentando su DNI (cada persona retira una única entrada). Los asistentes son atendidos por orden de llegada por alguno de los 3 empleados del club (cada uno atiende una boletería). Implemente una solución usando PMA, considerando que los empleados se retiran cuando ya no hay personas por atender. Notas: maximizar la concurrencia. La función obtenerEntrada(dni) le retorna al empleado la entrada para el DNI provisto por argumento; la función obtenerDNI() retorna el DNI para la persona que la invoca. Todos los procesos deben terminar.
+```
+    Ídem solución 1.
+```
 
  3. En un gimnasio hay tres máquinas iguales que pueden ser utilizadas para hacer ejercicio o rehabilitación. Hay E personas que quieren usar cualquiera de esas máquinas para hacer ejercicio. y R personas que las quieren usar para hacer rehabilitación. Siempre tienen prioridad aquellas que la quieran usar para realizar rehabilitación. Cuando una persona toma una máquina la usa por 10 minutos y se retira.
+```
+        chan usarEjercicio(integer);
+        chan usarRehabilitacion(integer);
+        chan pedirUso();
+        chan liberarMaquina();
+        chan usarMaquinaE[1..E](integer);
+        chan usarMaquinaR[1..R](integer);
+
+        process PersonaE[i=1..E]{
+            send usarEjercicio(i);
+            send pedirUso();
+            receive usarMaquinaE[i];
+            delay 600.0;
+            send liberarMaquina();
+            send pedirUso();
+        }
+
+        process personaE[i=1..R]{
+            send usarRehabilitacion(i);
+            send pedirUso();
+            receive usarMaquinaR[i];
+            delay 600.0;
+            send liberarMaquina();
+            send pedirUso();
+        }
+
+        process Admin {
+            int disponibles= 3, aux;
+            queue colaR, colaE;
+
+            while (true) {
+                receive pedirUso();
+                if (not empty usarRehabilitacion){
+                    receive usarRehabilitacion(aux);
+                    if (disponibles > 0){
+                        disponibles--;
+                        send usarMaquinaR[aux]();
+                    }
+                    else {
+                        push(colaR, aux);
+                    }
+                } else {
+                    if (not empty usarEjercicio){
+                        receive usarEjercicio(aux);
+                        if (disponibles > 0){
+                            disponibles--;
+                            send usarMaquinaE[aux]();
+                        } else {
+                            push(colaE, aux);
+                        }
+                    } else {
+                        receive liberarMaquina();
+                        disponibles++;
+                        if (not empty colaR){
+                            pop(colaR, aux);
+                            send usarMaquinaR[aux]();
+                        } else {
+                            if (not empty colaE){
+                                pop(colaE, aux);
+                                send usarMaquinaE[aux]();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+```
 
  4.  En una oficina hay 3 empleados y P personas que van a ser atendidas para realizarun trámite. Cuando una persona llega espera hasta ser atendida por cualquiera de los empleados, le indica el trámite a realizar y espera a que le den el resultado. Los empleados atienden las solicitudes en orden de llegada, si no hay personas esperando, durante 5 minutos resuelven trámites pendientes. Nota: No generar demora innecesaria, cada persona hace un solo pedido y termina, los empleados no necesitan terminar su ejecución. 
+```
+        chan avisarLlegada(integer);
+        chan tramites[1..E](text);
+        chan avisarDisponible(integer);
+        chan proximo[1..3](integer);
+
+        process Persona[i=1..P]{
+            text tramite;
+
+            send avisarLlegada(i);
+            receive tramites[i](tramite);
+        }
+
+        process Empleado[i=1..3]{
+            int idP;
+            text tramite;
+
+            while (true){
+                send avisarDisponible(i);
+                receive proximo[i](idP);
+                if (idP == -1){
+                    delay 300.0;
+                } else {
+                    tramite= resolver();
+                    send tramites[idP](tramite);
+                }
+            }
+        }    
+
+        process Admin{
+            int idE, idP;
+
+            while (true){
+                receive avisarDisponible(idE);
+                if (not empty avisarLlegada){
+                    receive avisarLlegada(idP);
+                    send proximo[idE](idP);
+                } else {
+                    send proximo[idE](-1);
+                }
+            }
+        }
+```
 
  5.  En un negocio hay 5 personas que atienden a N personas que van a pedir un presupuesto, de acuerdo al orden de llegada. Cuando el cliente sabe qué empleado lo va a atender le entrega el listado de productos que necesita y luego el empleado le entrega el presupuesto del mismo. Nota: Maximizar la concurrencia. Existe una función HacerPresupuesto(lista) que simula la elaboración del presupuesto por parte de los empleados. 
+```
+    chan avisarLlegada(integer);
+    chan empleadoAsignado[1..N](integer);
+    chan enviarListado[1..5](text,integer);
+    chan presupuesto[1..N](text);
+
+    process Cliente[i=1..N]{
+        text listado, presupuesto;
+        int idE;
+
+        send avisarLlegada(i);
+        receive empleadoAsignado[i](idE);
+        send enviarListado[idE](listado);
+        receive presupuestos[i](presupuesto);
+    }
+
+    process Empleado[i=1..5]{
+        int idC;
+        text listado, presupuesto;
+
+        while (true){
+            receive avisarLlegada(idC);
+            send empleadoAsignado[idC](i);
+            receive enviarListado[i](listado);
+            presupuesto= HacerPresupuesto(listado);
+            send presupuestos[idC](presupuesto);
+        }
+    }
+```
 
  6. Hay E estudiantes que rinden un examen final y un profesor que cunado todos los estudiantes han llegado les entrega el enunciado. Luego el profesor va corrigiendo los exámenes y enviando la nota de acuerdo con orden en que se van entregando. Cada alumno realiza el examen, lo entrega y espera a que el profesor le indique la nota. Maximizar la concurrencia, no realizar busy waiting, todos los procesos deben terminar.
+```
+    chan avisarLlegada();
+    chan recibirEnunciado[1..E](text);
+    chan avisarFin(integer, text);
+    chan recibirNota[1..E](integer);
+
+    process Estudiante[i=1..E]{
+        text enunciado, presupuesto;
+        int nota;
+
+        send avisarLlegada();
+        receive recibirEnunciado(enunciado);
+        examen= resolver(enunciado);
+        send avisarFin(i, text);
+        receive recibirNota[i](nota);
+    }
+
+    process Profesor{
+        int idE, nota;
+        text examen, enunciado;
+
+        for (i=1..E){
+            receive avisarLlegada();
+        }
+        for (i=1..E){
+            send recibirEnunciado[i](enunciado);
+        }
+        for (i=1..E){
+            receive avisarFin(idE, examen);
+            nota= corregir(examen);
+            send recibirNota[idE](nota);
+        }
+    }
+```
 
  7. En una empresa de software hay N personas que prueban un nuevo producto para encontrar errores, cuando encuentran uno generan un reporte para que un empleado corrija el error y esperan la respuesta del mismo. El empleado toma los reportes de acuerdo al orden de llegada, los evalúan, hace las correcciones necesarias y le responde a la persona que hizo el reporte.
 
  8. En una empresa de software hay 3 programadores que deben arreglar erroes informados por N clientes. Los clientes continuamente están trabajando, y cuando encuentran un error enían un reporte a la empresa para que lo corrija (no tienen que esperar a que se resuelva). Los programadores resuelven los reclamos de acuerdo al orden de llegada, y si no hay reclamos pendientes, trabajan durante una hora en otros programas. Nota: los procesos no deben terminal (trabajan en un loop infinito); suponga que hay una función ResovlerError que simula que un programador está resolviendo un reporte de un clinete, y otra Programar que simula que está trabajando en otro programa.
 
- 9. Resolver con PMA el siguiente problema. Se debe modelar el funcionamiento de una casa de venta de repuestos automotores, en la que trabajan V vendedores y que debe atender a C clientes. El modelado debe considerar que: (a) cada cliente realiza un pedido y luego espera a que se lo entreguen; y (b) los pedidos que hacen los clientes son tomados por cualquiera de los vendedores. Cuando no hay pedidos para atender, los vendedores aprovechan para controlar el stock de los repuestos (tardan entre 2 y 4 minutos para hacer esto). Nota: maximizar la concurrencia.
+ 9.  Resolver con PMA el siguiente problema. Se debe modelar el funcionamiento de una casa de venta de repuestos automotores, en la que trabajan V vendedores y que debe atender a C clientes. El modelado debe considerar que: (a) cada cliente realiza un pedido y luego espera a que se lo entreguen; y (b) los pedidos que hacen los clientes son tomados por cualquiera de los vendedores. Cuando no hay pedidos para atender, los vendedores aprovechan para controlar el stock de los repuestos (tardan entre 2 y 4 minutos para hacer esto). Nota: maximizar la concurrencia.
 
  10. En una oficina existen 100 empleados que envían documentos para imprimir en 5 impresoras compartidas. Los pedidos de impresión son procesados por orden de llegada y se asignan a la primera impresora que se encuentre libre. 
 
