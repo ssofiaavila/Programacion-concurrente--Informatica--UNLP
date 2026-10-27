@@ -887,3 +887,255 @@ Begin
     null;
 End ContadorOcurrencias;
 ```
+
+---
+
+# Patrones y situaciones de la práctica 5 (ADA / Rendezvous)
+
+Resumen de lo que se repitió en la explicación (Ej. 1 a 5 del apunte) y en los ejercicios 1 al 9 de la práctica. Los nombres son genéricos (Cliente, Servidor, Admin, Worker): en cada ejercicio se reemplazan por los del enunciado.
+
+## 1. ¿Qué patrón uso? (decisión rápida)
+
+| El enunciado dice... | Patrón | Apareció en |
+|---|---|---|
+| cliente pide algo y espera la respuesta | **A.** Pedido con respuesta en un solo encuentro | Apunte 1, Práctica 2a, 5 |
+| recurso con capacidad / condición, con distintos tipos de procesos | **B.** Un entry por tipo + `when` | Práctica 1a |
+| "dar prioridad a..." | **C.** Prioridad con `'count` | Apunte 3, Práctica 1b, 4 |
+| "espera a lo sumo X minutos" | **D.** Entry call temporal (`or delay`) | Apunte 2, Práctica 2b, 3, 4, 5 |
+| "si no lo atienden inmediatamente" | **E.** Entry call condicional (`else`) | Práctica 2c, 3, 4 |
+| "vuelve a intentarlo" / "hasta N veces" | **F.** Reintentos con bandera | Práctica 2d, 3, 4, 5, 9 |
+| "durante X minutos recibe solo de..." | **G.** Timer aparte | Práctica 3 |
+| "esperan hasta que estén todos" | **H.** Barrera en dos fases | Práctica 6 |
+| un coordinador reparte trabajo y junta los resultados | **I.** Coordinador / Workers | Apunte 5, Práctica 7, 8 |
+| varios servidores atienden por orden de llegada / hay que responderle a alguien después | **J.** Admin + ids (`Ident`) | Apunte 4, Práctica 9 |
+| alguien deja algo y sigue sin esperar al que lo procesa | **K.** Tarea buffer con cola | Práctica 4 (Escritorio) |
+| "esperar a lo sumo X a que **lo** llamen" (el que espera es quien acepta) | **L.** `select` de accept + `or delay` | Práctica 9 |
+
+## 2. Reglas que se repiten en todos los ejercicios
+1. **No hay variables compartidas.** Todo dato compartido vive como variable local de una tarea (Puente, Empresa, Escritorio) y los demás lo tocan solo por entries.
+2. **Aprovechar la comunicación bidireccional:** si el que llama necesita una respuesta, va como `OUT` en el mismo entry y se calcula dentro del accept. No hacer dos comunicaciones cuando alcanza con una.
+3. **Dentro del accept, solo lo que el otro necesita esperar.** El trabajo pesado (cruzar el puente, recolectar, procesar una señal, sumar un vector) va **fuera** del rendezvous. Si no, se pierde concurrencia.
+4. **En el `when` no se pueden usar parámetros del entry.** Si la decisión depende de "quién es" o "de qué tipo es", hace falta **un entry distinto por tipo**.
+5. **`'count` lo consulta solo la tarea dueña del entry**, y se usa para prioridades (`when (Prioritario'count = 0)`). No tiene sentido `when (X'count > 0) => accept X`.
+6. **Nombrado asimétrico:** el que llama sabe a quién llama; el que acepta no sabe quién lo llamó. Conviene que **las muchas tareas llamen a la única** (así nadie necesita ids). Si alguien tiene que llamar a una instancia de un arreglo, esa instancia necesita conocer su id (entry `Ident` desde el programa principal).
+7. **Una tarea que solo llama no necesita entries:** `task type Auto;`. Una tarea puede tener entries y además hacer entry calls a otras (Equipo, Admin).
+8. **El `select` elige una alternativa solo si su `when` es verdadero y hay entry calls pendientes.** Si ninguna cumple, espera en el `select` completo. Un `accept` suelto, en cambio, espera ahí hasta que llamen.
+9. **`or delay t` vs `else`:** "a lo sumo t" es `or delay t`; "inmediatamente" es `else`. En un mismo `select` va uno u otro, nunca los dos. Un `delay t;` suelto hace dormir a la tarea (otra cosa).
+10. **Cuando alguien tiene que esperar a que pase algo con otros (todos llegaron, todos los resultados están), separar en dos fases con dos entries:** una para contar/recibir, otra para liberar/responder.
+11. **Cada `accept` necesita su entry call (en la misma cantidad).** Si no, una tarea queda trabada para siempre.
+12. **Si se sabe cuántas veces se repite algo, `for i in 1..N loop`.** Si puede cortar antes, `while` con bandera (o `exit`).
+
+## 3. Patrones
+
+### A. Pedido con respuesta en un solo encuentro (Apunte 1, Práctica 2a)
+```ada
+task Servidor is
+   entry Pedido (D: IN texto; R: OUT texto);
+end Servidor;
+
+task body Cliente is
+   res: texto;
+begin
+   Servidor.Pedido("datos", res);
+end Cliente;
+
+task body Servidor is
+begin
+   loop
+      accept Pedido (D: IN texto; R: OUT texto) do
+         R := resolver(D);
+      end Pedido;
+   end loop;
+end Servidor;
+```
+El orden de llegada lo da la cola implícita del entry (FIFO).
+
+### B. Un entry por tipo + `when` (Práctica 1a)
+**Idea:** el recurso es una tarea con su estado local; cada tipo de proceso tiene su propio entry y su condición. La salida no lleva `when`.
+```ada
+task body Recurso is
+   ocupado: integer := 0;
+begin
+   loop
+      select
+         when (ocupado + 1 <= MAX) => accept EntraTipo1 do ocupado := ocupado + 1; end EntraTipo1;
+      or
+         when (ocupado + 3 <= MAX) => accept EntraTipo3 do ocupado := ocupado + 3; end EntraTipo3;
+      or
+         accept Sale (cant: IN integer) do ocupado := ocupado - cant; end Sale;
+      end select;
+   end loop;
+end Recurso;
+```
+El proceso hace `Recurso.EntraTipoX;` → usa el recurso (fuera del accept) → `Recurso.Sale(x);`.
+
+### C. Prioridad con `'count` (Apunte 3, Práctica 1b, 4)
+**Idea:** a las alternativas de **menor** prioridad se les agrega `and (EntryPrioritario'count = 0)`. La prioritaria y la salida no cambian.
+```ada
+select
+   accept Prioritario (...) do ... end Prioritario;
+or
+   when (Prioritario'count = 0) => accept Regular (...) do ... end Regular;
+or
+   when (Prioritario'count = 0) and (Regular'count = 0) => accept Tarea_cuando_esta_libre ...;
+end select;
+```
+El orden de las alternativas **no** da prioridad.
+
+### D / E. Entry call temporal y condicional (Práctica 2b, 2c)
+```ada
+select                                   select
+   Servidor.Pedido(d, r);                   Servidor.Pedido(d, r);
+   -- solo si lo atendieron                 -- solo si lo atendieron
+or delay 600.0                           else
+   null;   -- se va                         null;   -- se va
+end select;                              end select;
+```
+El `or delay` cuenta hasta que el servidor **empieza** el accept.
+
+### F. Reintentos con bandera (Práctica 2d, 3, 4, 5)
+```ada
+atendido := false;
+intentos := 0;
+while (not atendido) and (intentos < 3) loop
+   select
+      Servidor.Pedido(d, r);
+      atendido := true;                    -- solo si lo atendieron
+   or delay 300.0
+      intentos := intentos + 1;
+      if (intentos < 3) then delay 600.0; end if;   -- espera antes de reintentar
+   end select;
+end loop;
+```
+- Reintentar **con el mismo dato** → generarlo fuera del `while` (Práctica 3, Periférico 2; Práctica 5).
+- "Si no es inmediato, espera 1 min y reintenta" → `else delay 60.0;`.
+- Combinación (Práctica 2d): un `select … else` **dentro** del `or delay` de otro `select`.
+
+### G. Timer aparte (Práctica 3)
+**Idea:** para "durante X minutos" no sirve `or delay X` en un loop (se reinicia en cada vuelta). Una tarea Timer cuenta el tiempo en paralelo y avisa con un entry.
+```ada
+task body Timer is
+begin
+   loop
+      accept Iniciar;
+      delay 180.0;
+      Central.FinTiempo;
+   end loop;
+end Timer;
+
+-- en la Central:
+Timer.Iniciar;
+fin := false;
+while (not fin) loop
+   select
+      accept Senal2 (s: IN texto) do senal := s; end Senal2;
+      procesar(senal);
+   or
+      accept FinTiempo;
+      fin := true;
+   end select;
+end loop;
+```
+
+### H. Barrera en dos fases (Práctica 6)
+```ada
+task type Grupo is
+   entry Llegada;
+   entry Comenzar;
+end Grupo;
+
+-- Integrante:
+grupos(miGrupo).Llegada;
+grupos(miGrupo).Comenzar;      -- queda bloqueado hasta que estén todos
+
+-- Grupo:
+for i in 1..4 loop accept Llegada; end loop;
+for i in 1..4 loop accept Comenzar; end loop;
+```
+Con un solo entry no funciona: el accept libera al que llega apenas lo atiende.
+
+### I. Coordinador / Workers (Apunte 5, Práctica 7, 8)
+**Idea:** separar **la orden / el dato de entrada** (accept rápido) de **la entrega del resultado**. Los workers calculan en paralelo, fuera de cualquier accept.
+```ada
+-- Worker:
+loop
+   Coordinador.PedirDato(dato);          -- dato: OUT
+   resultado := calcular(dato);          -- en paralelo con los demás
+   Coordinador.Resultado(resultado);
+end loop;
+
+-- Coordinador (un ciclo):
+for i in 1..N loop
+   accept PedirDato (d: OUT tipo) do d := dato; end PedirDato;
+end loop;
+for i in 1..N loop
+   accept Resultado (r: IN tipo) do
+      if (r > max) then max := r; end if;      -- o total := total + r
+   end Resultado;
+end loop;
+```
+- Primero los N `PedirDato` y después los N `Resultado`: así un worker rápido no toma dos veces el dato del mismo ciclo.
+- **Trampa:** llamar a cada worker con el cálculo **dentro** del accept (`workers(i).Calcular(res)`) hace los N cálculos de a uno.
+- No hace falta saber de qué worker viene cada resultado: un solo entry aceptado N veces.
+
+### J. Admin + ids (Apunte 4, Práctica 9)
+**Idea:** el cliente no elige quién lo atiende. Un Admin guarda los pedidos (en su cola implícita, o en arreglos/colas locales) y los servidores le piden el siguiente. Como el servidor después tiene que llamar al cliente, el cliente necesita su id.
+```ada
+-- Programa principal:
+for i in 1..N loop clientes(i).Ident(i); end loop;
+
+-- Cliente:
+accept Ident (pos: IN integer) do id := pos; end Ident;
+Admin.Pedido(id, datos);
+accept Respuesta (r: IN texto) do res := r; end Respuesta;
+
+-- Servidor:
+loop
+   Admin.Siguiente(idC, datos);
+   r := resolver(datos);
+   clientes(idC).Respuesta(r);
+end loop;
+
+-- Admin con accept anidado (sin cola explícita):
+loop
+   accept Siguiente (id: OUT integer; d: OUT texto) do
+      accept Pedido (idC: IN integer; datos: IN texto) do
+         id := idC;
+         d := datos;
+      end Pedido;
+   end Siguiente;
+end loop;
+```
+Si el Admin tiene que elegir con un criterio ("el que más reclamos hizo"), guarda contadores en arreglos locales y acepta `Siguiente` con `when (hayPendientes)`. Marcar a los ya asignados para no mandarle dos servidores al mismo (Práctica 9).
+
+### K. Tarea buffer con cola (Práctica 4, Escritorio)
+**Idea:** el que produce deja el dato y sigue; el que consume lo pide cuando puede. El buffer nunca entrega si está vacío.
+```ada
+task body Buffer is
+   elems: cola;
+begin
+   loop
+      select
+         accept Dejar (e: IN texto) do push(elems, e); end Dejar;
+      or
+         when (not empty(elems)) =>
+            accept Sacar (e: OUT texto) do pop(elems, e); end Sacar;
+      end select;
+   end loop;
+end Buffer;
+```
+Si el consumidor final es una tarea que no puede salir a buscar (el Médico solo acepta), se agrega un intermediario (Secretario) que hace `Buffer.Sacar(e); Medico.Procesar(e);` en un loop.
+
+### L. `select` de accept + `or delay` (Práctica 9)
+**Idea:** el `or delay` también existe del lado del que **acepta**: "espero a lo sumo X a que me llamen".
+```ada
+while (not atendida) loop
+   Empresa.Reclamo(miId);
+   select
+      accept Llegada;            -- me llamó el camión
+      atendida := true;
+   or delay 900.0
+      null;                      -- vuelvo a reclamar
+   end select;
+end loop;
+```
