@@ -220,21 +220,219 @@
 ```
 
  7. En una empresa de software hay N personas que prueban un nuevo producto para encontrar errores, cuando encuentran uno generan un reporte para que un empleado corrija el error y esperan la respuesta del mismo. El empleado toma los reportes de acuerdo al orden de llegada, los evalúan, hace las correcciones necesarias y le responde a la persona que hizo el reporte.
+```
+    chan enviarReporte(text, integer);
+    chan respuestas[1..N](text);
 
- 8. En una empresa de software hay 3 programadores que deben arreglar erroes informados por N clientes. Los clientes continuamente están trabajando, y cuando encuentran un error enían un reporte a la empresa para que lo corrija (no tienen que esperar a que se resuelva). Los programadores resuelven los reclamos de acuerdo al orden de llegada, y si no hay reclamos pendientes, trabajan durante una hora en otros programas. Nota: los procesos no deben terminal (trabajan en un loop infinito); suponga que hay una función ResovlerError que simula que un programador está resolviendo un reporte de un clinete, y otra Programar que simula que está trabajando en otro programa.
+    process Persona[i=1..N]{
+        text reporte, respuesta;
+
+        while (true){
+            reporte= probarProducto();
+            send enviarReporte(reporte, i);
+            receive respuestas[i](respuesta);
+        }
+    }
+
+    process Empleado{
+        text respuesta, reporte;
+        int idP;
+
+        while (true){
+            receive enviarReporte(reporte, idP);
+            respuesta= procesar(reporte);
+            send respuestas[idP](respuesta);
+        }
+    }
+```
+
+ 8. En una empresa de software hay 3 programadores que deben arreglar erroes informados por N clientes. Los clientes continuamente están trabajando, y cuando encuentran un error envían un reporte a la empresa para que lo corrija (no tienen que esperar a que se resuelva). Los programadores resuelven los reclamos de acuerdo al orden de llegada, y si no hay reclamos pendientes, trabajan durante una hora en otros programas. Nota: los procesos no deben terminal (trabajan en un loop infinito); suponga que hay una función ResolverError que simula que un programador está resolviendo un reporte de un clinete, y otra Programar que simula que está trabajando en otro programa.
+```
+    chan enviarReporte(text);
+    chan listo(integer);
+    chan siguiente[1..3](text);
+
+    process Cliente[i=1..N]{
+        text reporte;
+        while (true){
+            reporte= generarReporte();
+            send enviarReporte(reporte);
+        }
+    }
+
+    process Admin{
+        int idP;
+        text reporte;
+
+        while (true){
+            receive listo(idP);
+            if (not empty enviarReporte){
+                receive enviarReporte(reporte);
+                send siguiente[idP](reporte);
+            } else {
+                send siguiente[idP]("VACIO");
+            }
+        }
+    }
+
+    process Programador[i=1..3]{
+        text reporte;
+        while (true){
+            send listo(i);
+            receive siguiente[i](reporte);
+            if (reporte == "VACIO"){
+                delay 3600.0;
+            } else {
+                ResolverError(reporte);
+            }
+        }
+    }
+```
+> Enviar algún texto si es de tipo text el canal para indicar que no hay nada en el canal, no un -1
 
  9.  Resolver con PMA el siguiente problema. Se debe modelar el funcionamiento de una casa de venta de repuestos automotores, en la que trabajan V vendedores y que debe atender a C clientes. El modelado debe considerar que: (a) cada cliente realiza un pedido y luego espera a que se lo entreguen; y (b) los pedidos que hacen los clientes son tomados por cualquiera de los vendedores. Cuando no hay pedidos para atender, los vendedores aprovechan para controlar el stock de los repuestos (tardan entre 2 y 4 minutos para hacer esto). Nota: maximizar la concurrencia.
+```
+    chan realizarPedido(integer, text);
+    chan entregas[1..C](text);
+    chan siguiente[1..V](integer, text);
+    chan listo(integer);
+    
+    process Cliente[i=1..C]{
+        text pedido, entrega;
 
- 10. En una oficina existen 100 empleados que envían documentos para imprimir en 5 impresoras compartidas. Los pedidos de impresión son procesados por orden de llegada y se asignan a la primera impresora que se encuentre libre. 
+        send realizarPedido(i, pedido);
+        receive entregas[i](entrega);
+    }
+
+    process Admin {
+        int idC, idV;
+        text pedido;
+
+        while (true){
+            receive listo(idV);
+            if (not empty realizarPedido){
+                receive realizarPedido(idC, pedido);
+                send siguiente[idV](idC, pedido);
+            } else {
+                send siguiente[idV](-1,null);
+            }
+        }
+    }
+
+    process Vendedor[i=1..V]{
+        int idC;
+        text pedido, entrega;
+
+        while (true){
+            send listo(i);
+            receive siguiente[i](idC, pedido);
+            if (idC == -1){
+                delay random(120, 240);
+            } else {
+                entrega= resolverPedido(pedido);
+                send entregas[idC](entrega);
+            }
+        }
+    }
+```
+> Usar función random si dice entre un tiempo y otro
+
+ 10. En una oficina existen 100 empleados que envían documentos para imprimir en 5 impresoras compartidas. Los pedidos de impresión son procesados por orden de llegada y se asignan a la primera impresora que se encuentre libre.
+```
+    chan pedidos(text);
+
+    process Empleado[i=1..100]{
+        text doc;
+
+        while (true){
+            doc= generarDocumento();
+            send pedidos(doc);
+        }
+    }
+
+    process Impresora[i=1..5]{
+        text doc;
+
+        while (true){
+            receive pedidos(doc);
+            imprimir(doc);
+        }
+    }
+``` 
 
  11. Se debe simular la atención en un peaje con 7 cabinas para atender a N vehículos (algunos de ellos son ambulancias). Cuando el vehículo llega al peaje se dirige a la cabina con menos vehículos esperando y se queda ahí hasta que lo terminan de atender y le dan el ticket de pago. Las cabinas atienden a los vehículos que van a ella de acuerdo al orden de llegada pero dando prioridad a las ambulancias; cuando terminan de atender a un vehículo le dan el ticket de pago. Nota: maximizar la concurrencia.
+```
+    chan avisarLlegada(integer);
+    chan atencion();
+    chan atencionC[1..7]();
+    chan cabinaAsignada[1..N](integer);
+    chan tickets[1..N](text);
+    chan atencionAmbulancia[1..7](integer);
+    chan atencionVehiculo[1..7](integer);
+    chan avisarSalida(integer);
+
+    process Vehiculo[i=1..N]{
+        text tipo, ticket;
+        int idC;
+
+        tipo= obtenerTipo();
+        send avisarLlegada(i);
+        send atencion();
+        receive cabinaAsignada[i](idC);
+        if (tipo == 'Ambulancia'){
+            send atencionAmbulancia[idC](i);
+        } else {
+            send atencionVehiculo[idC](i);
+        }
+        send atencionC[idC]();
+        receive tickets[i](ticket);
+        send avisarSalida(idC);
+        send atencion();
+    }
+
+    process Admin {
+        int idC, idV;
+        int cant_esperando[1..7]= (0[7]);
+
+        while (true){
+            receive atencion();
+            if (not empty avisarSalida){
+                receive avisarSalida(idC);
+                cant_esperando[idC]--;
+            } else {
+                receive avisarLlegada(idV);
+                idC= obtenerMenorCant(cant_esperando);
+                cant_esperando[idC]++;
+                send cabinaAsignada[idV](idC);
+            }
+        }
+    }
+
+    process Cabina[i=1..7]{
+        int idV;
+        text ticket;
+
+        while (true){
+            receive atencionC[i]();
+            if (not empty atencionAmbulancia[i]){
+                receive atencionAmbulancia[i](idV);
+            } else {
+                receive atencionVehiculo[i](idV);
+            } 
+            ticket= generarTicket();
+            send tickets[idV](ticket);
+        }
+    }
+```
 
  12. Se debe simular la atención en una planta para la VTV con 5 puestos para atender a N vehículos (que pueden ser sanitarios o comunes). Cuando el vehículo llega a la planta se dirige al puesto con menos vehículos esperando y se queda ahí hasta que le dan el comprobante de la verificación. Los puestos atienden a los vehículos que van a él de acuerdo al orden de llegada pero dando prioridad a los vehículos sanitarios; cuando terminan de atender a un vehículo le debe entregar un comprobante con los detalles de la verificación. Nota: maximizar la concurrencia.
+```
+```
 
  13.  Se debe simular la atención en un banco con 3 cajas para atender a N clientes que pueden ser especiales (son las embarazadas y los ancianos) o regulares. Cuando el cliente llega al banco se dirige a la caja con menos personas esperando y se queda ahi hasta que lo terminan de atender y le dan el comprobante de pago. Las cajas atienden a las personas que van a ella de acuerdo al orden de llegada pero dando prioridad a los clientes especiales; cuando terminan de atender a un cliente le debe entregar un comprobante de pago. Nota: maximizar la concurrencia.
    
  14.  En un negocio hay 5 empleados que atienden a N personas que van a pedir un presupuesto, de acuerdo al orden de llegada. Cuando el cliente sabe qué empleado lo va a atender le entrega el listado de productos que necesita, y luego el empleado le entrega el presupuesto del mismo. Nota: maximizar la concurrencia. Existe una función HacerPresupuesto(lista) que simula la elaboración del presupuesto por parte de los empleados.
- 15.  
+
 
 # PMS
  1.  En un gimnasio hay una bicicleta de alta gama (que sólo puede ser usada por una persona a la vez) y un entrenador que controla su uso. También hay P deportistas que deben usar la bicicleta una única vez. Implemente una solución usando PMS considerando que el entrenador da acceso según el orden de llegada.
