@@ -427,11 +427,170 @@
 
  12. Se debe simular la atención en una planta para la VTV con 5 puestos para atender a N vehículos (que pueden ser sanitarios o comunes). Cuando el vehículo llega a la planta se dirige al puesto con menos vehículos esperando y se queda ahí hasta que le dan el comprobante de la verificación. Los puestos atienden a los vehículos que van a él de acuerdo al orden de llegada pero dando prioridad a los vehículos sanitarios; cuando terminan de atender a un vehículo le debe entregar un comprobante con los detalles de la verificación. Nota: maximizar la concurrencia.
 ```
+    chan avisarLlegada(integer);
+    chan atencion();
+    chan atencionS[1..5](integer);
+    chan atencionC[1..5](integer);
+    chan puestos[1..N](integer);
+    chan avisarPuesto[1..5]();
+    chan verificaciones[1..N](text);
+    chan avisarSalida(integer);
+
+    process Vehiculo[i=1..N]{
+        text tipo, verificacion;
+        int idP;'
+        
+        tipo= obtenerTipoVehiculo();
+        send avisarLlegada(i);
+        send atencion();
+        receive puestos[i](idP);
+        if (tipo == 'Sanitario'){
+            send atencionS[idP](i);
+        } else {
+            send atencionC[idP](i);
+        }
+        send avisarApuesto[idP]();
+        receive verificaciones[i](verificacion);
+        send avisarSalida(idP);
+        send atencion();
+    }
+
+    process Puesto[i=1..5]{
+        int idV;
+        text verificacion;
+
+        while (true){
+            receive avisarPuesto[i]();
+            if (not empty atencionS[i]){
+                receive atencionS[i](idV);
+            } else {
+                receive atencionC[i](idV);
+            }
+            verificacion= generarV();
+            send verificaciones[idV](verificacion);
+        }
+    }
+
+    process Admin{
+        int idV, idP;
+        cant[1..5]=(0[5]);
+
+        while (true){
+            receive atencion();
+            if (not empty avisarLlegada){
+                receive avisarLlegada(idV);
+                idP= menorOcupado(cant);
+                cant[idP]++;
+                send puestos[idV](idP);
+            } else {
+                receive avisarSalida(idP);
+                cant[idP]--;
+            }
+        }
+    }
 ```
 
  13.  Se debe simular la atención en un banco con 3 cajas para atender a N clientes que pueden ser especiales (son las embarazadas y los ancianos) o regulares. Cuando el cliente llega al banco se dirige a la caja con menos personas esperando y se queda ahi hasta que lo terminan de atender y le dan el comprobante de pago. Las cajas atienden a las personas que van a ella de acuerdo al orden de llegada pero dando prioridad a los clientes especiales; cuando terminan de atender a un cliente le debe entregar un comprobante de pago. Nota: maximizar la concurrencia.
+```
+    chan avisarLlegada(integer);
+    chan atencion();
+    chan cajaAsignada[1..N](integer);
+    chan atencionE[1..3](integer);
+    chan atencionC[1..3](integer);
+    chan atencionCaja[1..3]();
+    chan comprobantes[1..N](text);
+    chan avisarSalida(integer);
+
+    process Cliente[i=1..N]{
+        text tipo, comprobante;
+        int idC;
+
+        tipo= obtenerTipo();
+        send avisarLlegada(i);
+        send atencion();
+        receive cajaAsignada[i](idC);
+        if (tipo == 'Especial'){
+            send atencionE[idC](i);
+        } else {
+            send atencionC[idC](i);
+        }
+        send atencionCaja[idC]();
+        receive comprobantes[i](comprobante);
+        send avisarSalida(idC);
+        send atencion();
+    }
+
+    process Caja[i=1..3]{
+        int idC;
+        text comprobante;
+
+        while (true){
+            receive atencionCaja[i]();
+            if (not empty atencionE){
+                receive atencionE(idC);
+            } else {
+                receive atencionC(idC);
+            }
+            comprobante= generarC();
+            send compronbates[idC](comprobante);
+        }
+    }
+
+    process Admin {
+        int idC, idCaja;
+        cant[1..3]=(0[3]);
+
+        while (true){
+            receive atencion();
+            if (not empty avisarLlegada){
+                receive avisarLlegada(idC);
+                idCaja= menorOcupada(cant);
+                cant[idCaja]++;
+                send cajaAsignada[idC](idCaja);
+            } else {
+                receive avisarSalida(idCaja);
+                cant[idCaja]--;
+            }
+        }
+    }
+```
    
  14.  En un negocio hay 5 empleados que atienden a N personas que van a pedir un presupuesto, de acuerdo al orden de llegada. Cuando el cliente sabe qué empleado lo va a atender le entrega el listado de productos que necesita, y luego el empleado le entrega el presupuesto del mismo. Nota: maximizar la concurrencia. Existe una función HacerPresupuesto(lista) que simula la elaboración del presupuesto por parte de los empleados.
+```
+    chan avisarLlegada(integer);
+    chan avisarE[1..5](text);
+    chan empleadosAsignados[1..N](integer);
+    chan presupuestos[1..N](text);
+
+    process Cliente[i=1..N]{
+        text lista, presupuesto;
+        int idE;
+
+        send avisarLlegada(i);
+        receive empleadosAsignados[i](idE);
+        send avisarE[idE](lista);
+        receive presupuestos[i](presupuesto);
+    }
+
+    process Empleado[i=1..5]{
+        int idC;
+        text presupuesto, lista;
+
+        while (true){
+            receive avisarLlegada(idC);
+            send empleadosAsignados[idC](i);
+            receive avisarE[i](lista);
+            presupuesto= HacerPresupuesto(lista);
+            send presupuestos[idC](presupuesto);
+        }
+    }
+```
+
+> **A tener en cuenta acá (ejercicios 11, 12 y 13)**
+> Cuando el Admin mantiene un contador con llegadas y salidas, conviene preguntar primero por la salida en el `if (not empty ...)`. No importa el orden en que se declaran los canales, sino cuál se consulta primero.
+> - Si hay una llegada y una salida pendientes, la salida ya ocurrió: procesarla primero deja el contador actualizado antes de elegir el puesto con menos gente.
+> - Evita que las salidas queden postergadas si siguen llegando vehículos. Al revés no pasa, porque solo puede haber tantas salidas como asignaciones ya hechas.
+> - Las dos versiones son correctas y ninguna se bloquea, porque cada `atencion` se envía después de su mensaje. Con la salida primero, la elección es más precisa.
 
 
 # PMS
