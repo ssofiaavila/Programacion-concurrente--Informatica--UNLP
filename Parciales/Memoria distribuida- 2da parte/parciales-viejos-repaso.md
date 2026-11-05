@@ -595,22 +595,176 @@
 
 # PMS
  1.  En un gimnasio hay una bicicleta de alta gama (que sólo puede ser usada por una persona a la vez) y un entrenador que controla su uso. También hay P deportistas que deben usar la bicicleta una única vez. Implemente una solución usando PMS considerando que el entrenador da acceso según el orden de llegada.
+   ```
+    process Deportista[i=1..P]{
+        Admin!avisarLlegada(i);
+        Entrenador?usarMaquina();
+        delay usarMaquina;
+        Entrenador!avisarSalida();
+    }
+    
+    process Admin{
+        queue esperando;
+        int idE;
+        do Deportista[*]?avisarLlegada(idE) -> push (esperando, idE);
+            not empty(esperando); Entrenador?listo() -> pop(esperando, idE);
+                                                        Entrenador!siguiente(idE);
+        od
+    }
+
+    process Entrenador{
+        int idE;
+        for (i=1..P){
+            Admin!listo();
+            Admin?siguiente(idE);
+            Deportista[idE]!usarMaquina();
+            Deportista[idE]?avisarSalida();
+        }
+    }
+   ```
 
  2. En un gimnasio hay una bicicleta de alta gama (que sólo puede ser usada por una persona a la vez) y un entrenador que controla su uso. También hay P deportistas que deben usar la bicicleta una única vez. Implemente una solución usando PMS considerando que el entrenador da acceso según el identificador del deportista (hasta que el deportista i no lo haya usado, el deportista i+1 debe esperar).
+   ```
+    process Deportista[i=1..P]{
+        Empleado!avisarLlegada();
+        Empleado?usarMaquina();
+        delay usoMaquina;
+        Empleado!avisarSalida();
+    }
+
+    process Empleado{
+        for i=1..P{
+            Deportista[i]?avisarLlegada();
+            Deportista[i]!usarMaquina();
+            Deportista[i]?avisarSalida();
+        }
+    }
+   ```
 
  3. En una carrera hay C corredores y 3 coordinadores. Al llegar los corredores deben dirigirse a los coordinadores para que cualquiera de ellos le dé el número de chaleco con el que van a correr y luego se va. Los coordinadores atienden a los corredores de acuerdo al orden de llegada. Cuando un coordinador está libre atiende al primer corredor que está esperando. Nota: Maximizar la concurrencia. 
+   ```
+    process Corredor[i=1..C]{
+        int nroAsignado;
+        Admin!avisarLlegada(i);
+        Coordinador[*]?asignacion(nroAsignado);
+    }
 
+    process Admin{
+        queue esperando;
+        int idC, idCoordi;
+        do Corredor[*]?avisarLlegada(idC) -> push(esperando, idC);
+            (not empty (esperando)); Coordinador[*]?listo(idCoordi) -> pop(esperando, idC);
+                                                                        Coordinador[idCoordi]!siguiente(idC);
+        od;
+    }
+
+    process Coordinador[i=1..3]{
+        int idC, nro;
+        while (true){
+            Admin!listo(i);
+            Admin?siguiente(idC);
+            nro= asignarNro(idC);
+            Corredor[idC]!asignacion(nro);
+        }
+    }
+   ```
  4. Simular la atención de una estación de servicio con un único surtidor que tiene un empleado que atiende a los N clientes de acuerdo al orden de llegada. Cada cliente espera hasta que el empleado lo atienda y le indique qué y cuánto cargar, espera hasta que termine de cargarle combustible y se retira. Nota: Cada cliente carga combustible solo una vez, todos los procesos deben terminar. 
+   ```
+    process Cliente[i=1..N]{
+        text combustible;
+        int cant;
+        Admin!avisarLlegada(i);
+        Empleado!infoCombustible(combustible, cant);
+        Empleado?fin();
+    }
 
+    process Admin{
+        int cant=0, idC; 
+        queue esperando;
+        do cant < N; Cliente[*]?avisarLlegada(idC) -> push(esperando, idC);
+                                                        cant++;
+            not empty esperando; Empleado?listo() -> pop(esperando, idC);
+                                                        Empleado!siguiente(idC);
+        od
+    }
+
+    process Empleado {
+        text combustible;
+        int cant, idC;
+        for i=1..N{
+            Admin!listo();
+            Admin?siguiente(idC);
+            Cliente[idC]?infoCombustible(combustible, cant);
+            delay carga;
+            Cliente[idC]!fin();
+        }
+    }
+   ```
  5. En una exposición aeronáutica hay un simulador de vuelo (que debe ser usado con exclusión mutua) y un empleado encargado de administrar el uso del mismo. A su vez hay P personas que van a la exposición y solicitan usar el simulador, cada una de ellas espera a que el empleado lo deje acceder, lo usa por un rato y se retira para que el empleado deje pasar a otra persona. El empleado deja usar el simulador a las personas respetando el orden en que hicieron la solicitud. Nota: Cada persona usa una vez el simulador. 
+   ```
+    process Persona[i=1..P]{
+        Admin!avisarLlegada(i);
+        Empleado?usar();
+        delay usarSimulador;
+        Empleado!finUso();
+    }
+
+    process Admin {
+        queue esperando;
+        int idP;
+
+        do Persona[*]?avisarLlegada(idP) -> push(esperando, idP);
+            not empty esperando; Empleado?listo() -> pop(esperando, idP);
+                                                        Empleado!siguiente(idP);
+        od;
+    }
+
+    process Empleado{
+        int idC;
+        for (i=1..P){
+            Admin!listo();
+            Admin?siguiente(idC);
+            Persona[idC]!usar();
+            Persona[idC]?finUso();
+        }
+    }
+   ```
 
  6. En un consultorio hay un médico para atender a 15 pacientes de acuerdo con el orden de llegada. Cada paciente al llegar espera a que el médico lo atienda y le indique su tratamiento. Nota: Existe la función atender() que simula que el médico está atendiendo a un paciente, todos los procesos deben terminar. 
+   ```
+    process Paciente[i=1..15]{
+        int tratamiento;
+        Admin!avisarLlegada(i);
+        Medico?atencion(tratamiento);
+    }
+
+    process Admin {
+        queue esperando;
+        int idP, cant= 0;
+
+        do cant < 15; Paciente[*]?avisarLlegada(idP) -> push(esperando, idP);
+                                                        cant++;
+            not empty esperando; Medico?libre() -> pop(esperando, idP);
+                                                        Medico!siguiente(idP);
+        od;
+    }
+
+    process Medico{
+        int idC, tratamiento;
+        for (i=1..15){
+            Admin!libre();
+            Admin?siguiente(idC);
+            tratamiento= atender();
+            Paciente[idC]!atencion(tratamiento);
+        }
+    }
+   ```
 
  7. En la estación de trenes hay una terminal de SUBE que debe ser usada por P personas de acuerdo con el orden de llegada. Cuando la persona accede a la terminal, la usa y luego se retira para dejar al siguiente. Cada persona usa solo una vez la terminal.
 
  8. En una empresa de software hay un empleado Testeo que prueba un nuevo producto para encontrar errores, cuando encuentra uno generan un reporte para que otro empleado Mantenimiento corrija el error (no requiere una respuesta para seguir trabajando) y continúa trabajando. El empleado Mantenimiento toma los reportes para evaluarlos y hacer las correcciones necesarias.
 
- 9. En una excursión hay una tirolesa que debe ser usada por 20 turistas. Para esto hay un guía y un empleado. El empelado espera a que todos los turistas hayan llegado para darles una charla explicando las medidas de seguridad. Cuando termina la charla los turistas piden usar la tirolesa y esperan a que el guía les vaya dando el permiso de tirarse. El guía deja usar la tirolesa a un cliente a la vez y de acuerdo al orden en que lo van solicitando. Nota: todos los procesos deben terminar; suponga que el empleado tienen una función DarCharla() que simula que el empleado está dando la charla, y los turistas tienen una función UsarTitolesa() que simula que está usando la tirolesa. 
+ 9.  En una excursión hay una tirolesa que debe ser usada por 20 turistas. Para esto hay un guía y un empleado. El empelado espera a que todos los turistas hayan llegado para darles una charla explicando las medidas de seguridad. Cuando termina la charla los turistas piden usar la tirolesa y esperan a que el guía les vaya dando el permiso de tirarse. El guía deja usar la tirolesa a un cliente a la vez y de acuerdo al orden en que lo van solicitando. Nota: todos los procesos deben terminar; suponga que el empleado tienen una función DarCharla() que simula que el empleado está dando la charla, y los turistas tienen una función UsarTitolesa() que simula que está usando la tirolesa. 
 
  10. En un comedor estudiantil hay un horno microondas que debe ser usado por E estudiantes de acuerdo con el orden de llegada. Cuando el estudiante accede al horno, lo usa y luego se retira para dejar al siguiente. Nota: cada Estudiante una sólo una vez el horno.
 
