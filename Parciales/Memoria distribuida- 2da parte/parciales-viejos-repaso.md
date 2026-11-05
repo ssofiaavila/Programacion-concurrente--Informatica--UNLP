@@ -761,19 +761,249 @@
    ```
 
  7. En la estación de trenes hay una terminal de SUBE que debe ser usada por P personas de acuerdo con el orden de llegada. Cuando la persona accede a la terminal, la usa y luego se retira para dejar al siguiente. Cada persona usa solo una vez la terminal.
+   ```
+    process Persona[i=1..P]{
+        Admin!avisarLlegada(i);
+        Terminal?usar();
+        usarTerminal();
+        Terminal!avisarSalida();
+    }
+
+    process Admin{
+        queue esperando;
+        int idP;
+
+        do Persona[*]?avisarLlegada(idP) -> push(esperando, idP);
+            not empty esperando; Terminal?listo() -> pop(esperando, idP);
+                                                    Terminal!siguiente(idP);
+        od
+    }
+
+    process Terminal{
+        int idP;
+        while (true){
+            Admin!listo();
+            Admin?siguiente(idP);
+            Persona[idP]!usar();
+            Persona[idP]?avisarSalida();
+        }
+    }
+   ```
 
  8. En una empresa de software hay un empleado Testeo que prueba un nuevo producto para encontrar errores, cuando encuentra uno generan un reporte para que otro empleado Mantenimiento corrija el error (no requiere una respuesta para seguir trabajando) y continúa trabajando. El empleado Mantenimiento toma los reportes para evaluarlos y hacer las correcciones necesarias.
+   ```
+    process Testeo{
+        boolean tieneError;
+        text reporte;
+        
+        while(true){
+            reporte= analizarSitio();
+            tieneError= revisar(reporte);
+            if(tieneError){
+                Admin!reportar(reporte);
+            }
+        }
+    }
+
+    process Admin{
+        queue reportes;
+        text reporte;
+
+        do Testeo?reportar(reporte) -> push(reportes, reporte);
+            not empty reportes; Mantenimiento?listo() -> pop(reportes, reporte);
+                                                            Mantenimiento!siguiente(reporte);
+        od
+    }
+
+    process Mantenimiento{
+        text reporte;
+
+        while(true){
+            Admin!listo();
+            Admin?siguiente(reporte);
+            resolver(reporte);
+        }
+    }
+   ```
 
  9.  En una excursión hay una tirolesa que debe ser usada por 20 turistas. Para esto hay un guía y un empleado. El empelado espera a que todos los turistas hayan llegado para darles una charla explicando las medidas de seguridad. Cuando termina la charla los turistas piden usar la tirolesa y esperan a que el guía les vaya dando el permiso de tirarse. El guía deja usar la tirolesa a un cliente a la vez y de acuerdo al orden en que lo van solicitando. Nota: todos los procesos deben terminar; suponga que el empleado tienen una función DarCharla() que simula que el empleado está dando la charla, y los turistas tienen una función UsarTitolesa() que simula que está usando la tirolesa. 
+   ```
+    process Turista[i=1..20]{
+        Empleado!avisarLlegada();
+        Empleado?avanzar();
+        Admin!avisarEspera(i);
+        Guia?ingresar();
+        UsarTirolesa();
+        Guia!avisarSalida();
+    }
+
+    process Admin{
+        int cant=0, idT;
+        queue espera;
+
+        do cant < 20; Turista[*]?avisarEspera(idT) -> push(espera, idT);
+                                                        cant++;
+            not empty espera; Guia?listo() -> pop(espera, idT);
+                                                Guia!siguiente(idT);
+        od 
+    }
+
+    process Empleado{
+        for (i=1..20){
+            Turista[*]?avisarLlegada();
+        }
+        DarCharla();
+        for (i=1..20){
+            Turista[i]!avanzar();
+        }
+    }
+
+    process Guia{
+        int idT;
+        for(i=1..20){
+            Admin!listo();
+            Admin?siguiente(idT);
+            Turista[idT]!ingresar();
+            Turista[idT]?avisarSalida();
+        }
+    }
+   ```
 
  10. En un comedor estudiantil hay un horno microondas que debe ser usado por E estudiantes de acuerdo con el orden de llegada. Cuando el estudiante accede al horno, lo usa y luego se retira para dejar al siguiente. Nota: cada Estudiante una sólo una vez el horno.
+   ```
+    process Estudiante[i=1..E]{
+        Admin!avisarLlegada(i);
+        Horno?usar();
+        delay usoHorno();
+        Horno!avisarSalida();
+    }
+
+    process Admin{
+        queue espera;
+        int idE;
+
+        do Estudiante[*]?avisarLlegada(idE) -> push(espera, idE);
+            not empty (espera); Horno?listo() -> pop(espera, idE);
+                                                Horno!siguiente(idE);
+        od
+    }
+
+    process Horno {
+        int idE;
+        while (true){
+            Admin!listo();
+            Admin?siguiente(idE);
+            Estudiante[idE]!usar();
+            Estudiante[idE]?avisarSalida();
+        }
+    }
+   ```
 
  11. En un torneo de programación hay 1 organizador, N competidores y S supervisores. El organizador comunica el desafío a resolver a cada competidor. Cuando un competidor cuenta con el desafío a resolver, lo hace y lo entrega para ser evaluado. A continuación, espera a que alguno de los supervisores lo corrija y le indique si está bien. En caso de tener errores, el competidor debe corregirlo y volver a entregar, repitiendo la misma metodología hasta que llegue a la solución esperada. Los supervisores corrigen las entregas respetando el orden en que los competidores van entregando. Nota: maximizar la concurrencia y no generar demora innecesaria.
+```
+    process Competidor[i=1..N]{
+        text enunciado, solucion;
+        boolean tieneError= true;
+        
+        Organizador!avisarLlegada(i);
+        Organizador?enunciados(enunciado);
+        solucion= resolver(enunciado);
+        while (tieneError){
+            Admin!entregar(solucion, i);
+            Supervisor[*]?resultado(tieneError);
+            if(tieneError){
+                solucion= corregir(solucion);
+            }
+        }
+    }
 
+    process Admin{
+        queue espera;
+        int idS, idC;
+        text solucion;
+
+        do Competidor[*]?entregar(solucion, idC) -> push(espera, (solucion, idC));
+            not empty espera; Supervisor[*]!listo(idS) -> pop(espera, (solucion, idC));
+                                                            Supervisor[idS]!siguiente(solucion, idC);
+        od;
+    }
+
+    process Organizador{
+        text enunciado;
+        int idC;
+        while (true){
+            Competidor[*]?avisarLlegada(idC);
+            Competidor[idC]!enunciados(enunciado);
+        }
+    }
+
+    process Supervisor[i=1..3]{
+        text solucion;
+        boolean tieneError;
+        int idC;
+
+        while (true){
+            Admin!listo(i);
+            Admin?siguiente(solucion, idC);
+            tieneError= corregir(solucion);
+            Compediro[idC]!resultado(tieneError);
+        }
+    }
+```
  12. En una carrera hay C corredores y 3 Coordinadores. Al llegar los corredores deben dirigirse a los coordinadores para que cualquiera de ellos le dé el número de "chaleco" con el que van a correr y luego se va. Los coordinadores atienden a los corredores de acuerdo al orden de llegada (cuando un coordinador está libre atiende al primer corredor que está esperando). Nota: maximizar la concurrencia.
+   ```
+    process Corredor[i=1..C]{
+        int nro;
+
+        Admin!avisarLlegada(i);
+        Coordinador[*]?asignado(nro);
+    }
+
+    process Admin{
+        queue espera;
+        int idC, idCoord;
+
+        do Corredor[*]?avisarLlegada(idC) -> push(espera, idC);
+            not empty espera; Coordinador[*]?listo(idCoord) -> pop(espera, idC);
+                                                                Coordinador[idCoord]!siguiente(idC);
+        od
+    }
+
+    process Coordinador[i=1..3]{
+        int idC, nro;
+        
+        while(true){
+            Admin!listo(i);
+            Admin?siguiente(idC);
+            nro= asignarNro(idC);
+            Corredor[idC]!asignado(nro);
+        }
+    }
+   ```
 
  13. Simular la atención de una estación de servicio con un único surtidor que tiene un empleado que atiende a los N clientes de acuerdo al orden de llegada. Cada cliente espera hasta que el empleado lo atienda y le indica qué y cuánto cargar; espera hasta que termina de cargarle combustible y se retira. Nota: cada cliente carga combustible sólo una vez; todos los procesos deben terminar.
  14. En la estación de trenes hay una terminal de SUBE que debe ser usada por P personas de acuerdo con el orden de llegada. Cuando la persona accede a la terminal, la usa y luego se retira para dejar al siguiente. Noda: cada Persona usa solo una vez la terminal.
+
+> **Errores que tuve (para revisar antes de entregar)**
+>
+> **PMS**
+> - **El Admin no inicia la comunicación.** Si en una guarda de llegada hago `Empleado!siguiente(...)` sin que el empleado lo haya pedido con `listo()`, los dos quedan esperando al otro: deadlock. La guarda de llegada solo encola.
+> - **`!` envía y `?` recibe.** En las guardas el Admin siempre *recibe* (`Coordinador[*]?listo(id)`), nunca `Coordinador[*]!listo`.
+> - **No existe enviar a `[*]`.** `Proceso[*]` solo sirve para recibir de cualquiera. Para enviar necesito el id: `Turista[i]!avanzar()`.
+> - **Usar el índice cuando sé con quién hablo.** Si ya tengo el id, es `Deportista[idE]?avisarSalida()`, no `Deportista[*]`.
+> - **No hace falta un mensaje de "atención" extra.** El `!` ya bloquea al emisor hasta que el otro recibe, así que ese momento es la atención.
+> - **Terminación con contador.** Si se pide que todo termine: `do cant < N; ...?llegada -> push; cant++;` (¡no olvidar el `cant++` y que el límite sea el total real!).
+> - **Bucles con condición.** Inicializar la variable antes del `while` (`tieneError= true`) y, si hay que reintentar, cambiar lo que se reenvía (corregir la solución).
+> - **Llamar a las funciones que da el enunciado** (`DarCharla()`, `Programar()`, `atender()`...).
+>
+> **PMA**
+> - **Cada `send atencion()` va después del mensaje real**, y nunca hay que olvidarlo: si falta, el Admin no se entera de la llegada y todo se bloquea.
+> - **Si mantengo un contador, sumarlo al asignar y restarlo al salir**, y consultar primero la salida.
+> - **El cliente espera su respuesta** (`receive tickets[i](...)`) antes de avisar la salida.
+> - **Revisar tipos de canales**: no mandar `-1` por un canal `text`; usar un centinela del tipo correcto.
+> - **No olvidar el `send`** delante del canal, ni los índices `[i]` en canales por proceso.
+>
+> **En los dos:** usar siempre el mismo nombre para un mensaje o canal en el que envía y en el que recibe, y respetar los tiempos y cantidades del enunciado (1 hora = 3600, rangos con `random`, `1..S` y no `1..3`).
 
 # ADA
  1. Implemente una solución para el siguiente problema usando ADA. En un aeropuerto internacional hay una mesa de informes que atiende las consultas de los pasajeros. Existen P pasajeros que consultan una única vez, cada uno con una prioridad diferente: los pasajeros con vuelos inmediatos tienen prioridad sobre los que viajan más tarde; mientras que los pasajeros con movilidad reducida tienen prioridad sobre todos los demás. Cada pasajero entrega su código de vuelo al empleado de informes, quien responde con la puerta de embarque y la hora estimada de salida. Notas: Cada pasajero obtiene su prioridad mediante la función obtenerPrioridad(), que retorna 0 para movilidad reducida, 1 para vuelos inmediatos y 2 para el resto; mientras que la función obtenerVuelo() le retorna el código de vuelo. El empleado dispone de las funciones obtenerPuerta(vuelo) y obtenerHora(vuelo) que retornan la información de salida para el vuelo recibido. El empleado de informes atiende un pasajero por vez, según la prioridad indicada. Todas las tareas deben finalizar.
