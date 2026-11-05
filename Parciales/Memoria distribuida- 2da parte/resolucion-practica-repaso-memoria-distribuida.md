@@ -150,5 +150,104 @@
         end Cotizaciones;
    ```
 2. Resolver el siguiente problema. En un negocio de cobros digitales hay P personas que deben pasar por la única caja de cobros para realizar el pago de sus boletas. Las personas son atendidas de acuerdo con el orden de llegada, teniendo prioridad aquellos que deben pagar menos de 5 boletas de los que pagan más. Adicionalmente, las personas ancianas tienen prioridad sobre los dos casos anteriores. Las personas entregan sus boletas al cajero y el dinero de pago; el cajero les devuelve el vuelto y los recibos de pago. 
+   ```
+    process CobrosDigitales {
+        task Caja is
+            entry filaAncianos(boletas: IN text; dinero: IN/OUT integer; recibos: OUT integer);
+            entry filaMenos(boletas: IN text; dinero: IN/OUT integer; recibos: OUT integer);
+            entry filaComun(boletas: IN integer; dinero: IN/OUT integer; recibos: OUT integer);
+        end Caja;
+        task type Persona;
+        personas: array(1..P) of Persona;
+
+        task body Persona is
+            text boletas, recibos;
+            int dinero, cant;
+        begin
+            cant= cantAPagar();
+            esAnciano= obtenerEdad();
+            if (esAnciano) do
+                Caja.filaAncianos(boletas, dinero, recibos);
+            else
+                if (cant < 5) do
+                    Caja.filaMenos(boletas, dinero, recibos);
+                else 
+                    Caja.filaComun(boletas, dinero, recibos);
+            end if;
+        end Persona;
+
+        task body Caja is
+            integer dinero;
+            text boletas, recibos;
+        begin
+            loop
+                select
+                    accept filaAncianos(boletas: IN text; dinero: IN/OUT integer; recibos: OUT integer) do
+                        dinero:= cobrarDinero();
+                        recibos= procesarBoletas(boletas);
+                    end filaAncianos;
+                    or (when filaAncianos'count == 0) =>
+                        accept filaMenos(boletas: IN text; dinero: IN/OUT integer; recibos: OUT integer) do
+                        dinero:= cobrarDinero();
+                        recibos= procesarBoletas(boletas);
+                    end filaMenos;
+                    or (when filaAncianos'count == 0 AND filaMenos'count == 0) =>
+                        accept filaComun(boletas: IN text; dinero: IN/OUT integer; recibos: OUT integer) do
+                        dinero:= cobrarDinero();
+                        recibos= procesarBoletas(boletas);
+                    end filaComun;
+                end select;
+            end loop;
+        end Caja;
+        begin
+            null;
+        end CobrosDigitales;                
+    }
+   ```
 3. Resolver el siguiente problema. La oficina central de una empresa de venta de indumentaria debe calcular cuántas veces fue vendido cada uno de los artículos de su catálogo. La empresa se compone de 100 sucursales y cada una de ellas maneja su propia base de datos de ventas. La oficina central cuenta con una herramienta que funciona de la siguiente manera: ante la consulta realizada para un artículo determinado, la herramienta envía el identificador del artículo a las sucursales, para que cada una calcule cuántas veces fue vendido en ella. Al final del procesamiento, la herramienta debe conocer cuántas veces fue vendido en total, considerando todas las sucursales. Cuando ha terminado de procesar un artículo comienza con el siguiente (suponga que la herramienta tiene una función
 generarArtículo() que retorna el siguiente ID a consultar). Nota: maximizar la concurrencia. Existe una función ObtenerVentas(ID) que retorna la cantidad de veces que fue vendido el artículo con identificador ID en la base de la sucursal que la llama.
+    ```
+    process ControlStock is
+        task type Sucursal is
+            entry siguiente(id: IN integer);
+        end Sucursal;
+        task Central is
+            entry resultado(cant: IN integer);
+        end Central;
+        sucursales= array(1..100) of Sucursal;
+
+        task body Sucursal is
+            integer cant, idP;
+        begin
+            loop
+                cant:= 0;
+                accept siguiente(id: IN integer);
+                    idP= id;
+                end siguiente;
+                cant:= obtenerVentas(idP);
+                Central.resultado(cant);
+            end loop;
+        end Sucursal;
+
+        task body Central is
+            integer total, idP, aux;
+        begin
+            loop
+                total:= 0;
+                idP:= generarArticulo();
+                for i IN 1..100 loop
+                    sucursales(i).siguiente(idP);
+                end loop
+                for i IN 1..100 loop
+                    accept total(cant: IN integer) do
+                        aux:= cant;
+                    end total;
+                    total:= total + aux;
+                end loop;
+            end loop;
+        end Central;
+
+        begin
+            null;
+        end ControlStock;
+    ```
