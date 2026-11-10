@@ -982,7 +982,71 @@
    ```
 
  13. Simular la atención de una estación de servicio con un único surtidor que tiene un empleado que atiende a los N clientes de acuerdo al orden de llegada. Cada cliente espera hasta que el empleado lo atienda y le indica qué y cuánto cargar; espera hasta que termina de cargarle combustible y se retira. Nota: cada cliente carga combustible sólo una vez; todos los procesos deben terminar.
+```
+    process Cliente [i=1..N]{
+        int cant;
+        text combustible;
+        cant= cantPedido();
+        combustible= tipoCombustible();
+        Admin!avisarLlegada(i);
+        Empleado?atencion();
+        Empleado!pedido(cant, combustible);
+        Empleado?avisarFin();
+        Empleado!avisarSalida();
+    }
+
+    process Admin{
+        int idC, cant= 0;
+        queue esperando;
+        do cant < N; Cliente[*]?avisarLlegada(idC) -> push(esperando, idC);
+                                                        cant++;
+            not empty esperando; Empleado?listo() -> pop(esperando, idC);
+                                                        Empleado!siguiente(idC);
+        od;
+    }
+
+    process Empleado{
+        int idC, cant;
+        text combustible;
+        for (i=1..N){
+            Admin!listo();
+            Admin?siguiente(idC);
+            Cliente[idC]!atencion();
+            Cliente[idC]?pedido(cant, combustible);
+            delay carga;
+            Cliente[idC]!avisarFin();
+            Cliente[idC]?avisarSalida();
+        }
+    }
+```
  14. En la estación de trenes hay una terminal de SUBE que debe ser usada por P personas de acuerdo con el orden de llegada. Cuando la persona accede a la terminal, la usa y luego se retira para dejar al siguiente. Noda: cada Persona usa solo una vez la terminal.
+```
+    process Persona[i=1..P]{
+        Admin!avisarLlegada(i);
+        Terminal?usar();
+        UsarTerminal();
+        Terminal!avisarSalida();
+    }
+
+    process Admin{
+        queue esperando;
+        int idP;
+        do Persona[*]?avisarLlegada(idP) -> push(esperando, idP);
+            not empty esperando; Terminal?listo() -> pop(esperando, idP);
+                                                    Terminal!siguiente(idP);
+        od;
+    }
+
+    process Terminal{
+        int idP;
+        while (true){
+            Admin!listo();
+            Admin?siguiente(idP);
+            Persona[idP]!usar();
+            Persona[idP]?avisarSalida();
+        }
+    }
+```
 
 > **Errores que tuve (para revisar antes de entregar)**
 >
@@ -1007,8 +1071,123 @@
 
 # ADA
  1. Implemente una solución para el siguiente problema usando ADA. En un aeropuerto internacional hay una mesa de informes que atiende las consultas de los pasajeros. Existen P pasajeros que consultan una única vez, cada uno con una prioridad diferente: los pasajeros con vuelos inmediatos tienen prioridad sobre los que viajan más tarde; mientras que los pasajeros con movilidad reducida tienen prioridad sobre todos los demás. Cada pasajero entrega su código de vuelo al empleado de informes, quien responde con la puerta de embarque y la hora estimada de salida. Notas: Cada pasajero obtiene su prioridad mediante la función obtenerPrioridad(), que retorna 0 para movilidad reducida, 1 para vuelos inmediatos y 2 para el resto; mientras que la función obtenerVuelo() le retorna el código de vuelo. El empleado dispone de las funciones obtenerPuerta(vuelo) y obtenerHora(vuelo) que retornan la información de salida para el vuelo recibido. El empleado de informes atiende un pasajero por vez, según la prioridad indicada. Todas las tareas deben finalizar.
+```ada
+    procedure Aeropuerto is
+        task Empleado is
+            entry filaMovilidadReducida(cod: IN integer; puerta, hora: OUT integer);
+            entry filaInmediatos(cod: IN integer; puerta, hora: OUT integer);
+            entry filaComun(cod: IN integer; puerta, hora: OUT integer);
+        end Empleado;
+        task type Persona;
+        personas: array(1..P) of Persona;
+
+        task body Persona is
+            integer prioridad, codVuelo, nroPuerta, horaVuelo;
+        begin
+            prioridad:= obtenerPrioridad();
+            codVuelo:= obtenerCodVuelo();
+            if prioridad = 0 then
+                Empleado.filaMovilidadReducida(codVuelo, nroPuerta, horaVuelo);
+            elsif prioridad = 1 then
+                Empleado.filaInmediatos(codVuelo, nroPuerta, horaVuelo);
+                else 
+                    Empleado.filaCOmun(codVuelo, nroPuerta, horaVuelo);
+            end if;
+        end Persona;
+
+        task body Empleado is
+            integer i;
+        begin
+            for i in 1..P loop
+                select
+                    accept filaMovilidadReducida(cod: IN integer; puerta, hora: OUT integer) do
+                        puerta:= obtenerPuerta(cod);
+                        hora:= obtenerHora(cod);
+                    end filaMovilidadReducida;
+                or (when filaMovilidadReducida'count = 0) =>
+                    accept filaInmediatos(cod: IN integer; puerta, hora: OUT integer) do
+                        puerta:= obtenerPuerta(cod);
+                        hora:= obtenerHora(cod);
+                    end filaInmediatos;
+                or (when filaMovilidadReducida'count = 0 AND filaInmediatos'count = 0) =>
+                    accept filaComun(cod: IN integer; puerta, hora: OUT integer) do
+                        puerta:= obtenerPuerta(cod);
+                        hora:= obtenerHora(cod);
+                    end filaComun;
+                end select;
+            end loop;
+        end Empleado;
+        begin
+            null;
+        end Aeropuerto;
+```
 
  2. Existen N personas que van a realizar un pago en la caja de un banco. Las personas son atendidas de acuerdo al orden de llegada, aunque aquellos que sean jubilados tienen prioridad sobre los que no lo sean. Todas las personas esperan a lo sumo 15 minutos para ser atendidas. Si pasado ese tiempo no fueron atendidas, le dejan una nota de reclamo al responsable de informes y se retiran.
+```ada
+    procedure Banco is
+        task type Empleado is
+            entry filaJubilado(id: IN integer; respuesta: OUT text);
+            entry filaNormal(id: IN integer; respuesta: OUT text);
+        end Empleado;
+        task type EmpleadoReclamos is
+            entry envioReclamos(reclamo: IN text);
+        end EmpleadoReclamos;
+        task type Persona;
+        personas: array(1..N) of Persona;
+        
+        task body Persona is
+            boolean esJubilado;
+            integer id;
+            text rta, queja;
+        begin
+            esJubilado:= calcularEdad();
+            if esJubilado then
+                select
+                    Empleado.filaJubilado(id, rta);
+                or delay 900;
+                    queja:= generarQueja();
+                    EmpleadoReclamos.envioReclamos(queja);
+                end select;
+            else
+                select 
+                    Empleado.filaNormal(id, rta);
+                or delay 900
+                    queja:= generarQueja();
+                    EmpleadoReclamos.envioReclamos(queja);
+                end select;
+            end if;
+        end Persona;
+
+        task body Empleado is
+        begin
+            loop
+                select
+                    accept filaJubilado(id: IN integer; respuesta: OUT text) do
+                        respuesta:= atender(id);
+                    end filaJubilado;
+                or
+                    (when filaJubilado'count == 0) =>
+                        accept filaNormal(id: IN integer; respuesta: OUT text) do
+                            respuesta:= atender(id);
+                        end filaNormal;
+                end select;
+            end loop;
+        end Empleado;
+
+        task body EmpleadoReclamos is
+            queue reclamos;
+        begin
+            loop
+                accept envioReclamos(reclamo: IN text) do
+                    push(reclamos, reclamo);
+                end envioReclamos;
+            end loop;
+        end EmpleadoReclamos;
+
+        begin
+            null;
+        end Banco;
+```
 
  3. Se quiere modelar un puente colgante de un solo sentido, el cual resiste hasta 100 personas. Suponga que hay una cantidad innumerable de personas que quieren cruzar y que solo lo podrían hacer si no superan la cantidad máxima. Las personas cruzan el puente de acuerdo al orden de llegada, aunque los jubilados tienen prioridad sobre los no jubilados. 
 
@@ -1022,7 +1201,7 @@
 
  8. En la farmacia de un hospital hay una única ventanilla para dispensar medicamentos. Los P pacientes internados deben retirar sus medicamentos presentando una receta (un único retiro por persona). Los pacientes son atendidos en el orden de llegada, pero con prioridad de atención: los pacientes de urgencia tienen prioridad sobre los de internación general, y ambos tienen prioridad sobre los pacientes ambulatorios. Cada paciente entrega su receta y recibe la medicación correspondiente. Notas: la función obtenerPrioridad() le permite al paciente conocer su prioridad (retorna 0 si el paciente es de urgencia, 1 si es internado general, o 2 si es ambulatorio). La función obtenerReceta() retorna la receta para el paciente que la invoca mientras que dispensarMedicamento(receta) le retorna al empleado el medicamento para la receta indicada. El empleado atiende de a un paciente por vez, según la prioridad indicada. Todas las tareas deben finalizar. 
 
- 9. Hay un sitio web para identificación genética que resuelve pedidos de N clientes. Cada cliente trabaja continuamente de la siguiente manera: genera la secuencia de ADN, la envía al sitio web para evaluar y espera el resultado; después de esto puede comenzar a generar la siguiente secuencia de ADN. Para resolver estos pedidos el sitio web cuenta con 5 servidores idénticos que atienden los pedidos de acuerdo al orden de llegada (cada pedido es atendido por un único servicio). Nota: maximizar la concurrencia. Suponga que los servidores tienen una función ResolverAnalisis que recibe la secuencia de ADN y devuelve un entero con el resultado.
+ 9.  Hay un sitio web para identificación genética que resuelve pedidos de N clientes. Cada cliente trabaja continuamente de la siguiente manera: genera la secuencia de ADN, la envía al sitio web para evaluar y espera el resultado; después de esto puede comenzar a generar la siguiente secuencia de ADN. Para resolver estos pedidos el sitio web cuenta con 5 servidores idénticos que atienden los pedidos de acuerdo al orden de llegada (cada pedido es atendido por un único servicio). Nota: maximizar la concurrencia. Suponga que los servidores tienen una función ResolverAnalisis que recibe la secuencia de ADN y devuelve un entero con el resultado.
 
  10. En un negocio hay un empleado para atender los pedidos de clientes de N clientes; algunos clientes son ancianos o embarazadas. El empleado atiende los pedidos de acuerdo a la siguiente prioridad: primero las embarazadas, luego los ancianos, y por último el resto. Cada cliente hace sólo un pedido de la siguiente manera: en el caso de las embarazadas, si no son atendidas inmediatamente se retiran; en el caso de los ancianos, esperan a los sumo 5 minutos a ser atendidos, y si no se retira; cualquier otro cliente espera sí o sí hasta ser atendido. El empleado atiende a los clientes de acuerdo al orden de llegada pero manteniendo las siguientes prioridades: primero las embarazadas, luego los ancianos y luego el resto. Nota: suponga que existe una función AtenderPedido() que simula que el empleado está atendiendo a un cliente.
 
@@ -1033,13 +1212,13 @@
  • Lector: intenta acceder para leer, si no lo logró en 2 minutos, espera 5 minutos y vuelve a intentarlo de la misma manera. 
  Un proceso Escritor podrá acceder si no hay ningún otro proceso usando la base de datos; al acceder escribe y sale de la BD. Un proceso Lector podrá acceder si no hay procesos Escritores usando la base de datos; al acceder lee y sale de la BD. Siempre se le debe dar prioridad al pedido de acceso para escribir sobre el pedido de acceso para leer.
 
- 13.  la página web del Banco Central exhibe las diferentes cotizaciones del dólar oficial de 20 bancos del país, tanto para la compra como para la venta. Existe una tarea programada que se ocupa de actualizar la página en forma periódica y para ello consulta la cotización de cada uno de los 20 bancos. Cada banco dispone de una API, cuya única función es procesar las solicitudes de aplicaciones externas. La tarea programada consulta de a una API por vez, esperando a lo sumo 5 segundos por su respuesta. Si pasado ese tiempo no respondió, entonces se mostrará vacía la información de ese banco.
+ 1.   la página web del Banco Central exhibe las diferentes cotizaciones del dólar oficial de 20 bancos del país, tanto para la compra como para la venta. Existe una tarea programada que se ocupa de actualizar la página en forma periódica y para ello consulta la cotización de cada uno de los 20 bancos. Cada banco dispone de una API, cuya única función es procesar las solicitudes de aplicaciones externas. La tarea programada consulta de a una API por vez, esperando a lo sumo 5 segundos por su respuesta. Si pasado ese tiempo no respondió, entonces se mostrará vacía la información de ese banco.
 
- 14.  Una empresa de venta de calzado cuenta con S sedes. En la oficina central de la empresa se utiliza un sistema que permite controlar el stock de los diferentes modelos, ya que cada sede tiene una base de datos propia. El sistema de control de stock funciona de la siguiente manera: dado un modelo determinado, lo envía a las sedes para que cada una le devuelva la cantidad disponible en ellas; al final del procesamiento, el sistema informa el total de calzados disponibles de dicho modelo. Una vez que se completó el procesamiento de un modelo, se procede a realizar lo mismo con el siguiente modelo. Nota: suponga que existe una función DevolverStock(modelo,cantidad) que utiliza cada sede donde recibe como parámetro de entrada el modelo de calzado y retorna como parámetro de salida la cantidad de pares disponibles. Maximizar la concurrencia y no generar demora innecesaria.
+ 2.   Una empresa de venta de calzado cuenta con S sedes. En la oficina central de la empresa se utiliza un sistema que permite controlar el stock de los diferentes modelos, ya que cada sede tiene una base de datos propia. El sistema de control de stock funciona de la siguiente manera: dado un modelo determinado, lo envía a las sedes para que cada una le devuelva la cantidad disponible en ellas; al final del procesamiento, el sistema informa el total de calzados disponibles de dicho modelo. Una vez que se completó el procesamiento de un modelo, se procede a realizar lo mismo con el siguiente modelo. Nota: suponga que existe una función DevolverStock(modelo,cantidad) que utiliza cada sede donde recibe como parámetro de entrada el modelo de calzado y retorna como parámetro de salida la cantidad de pares disponibles. Maximizar la concurrencia y no generar demora innecesaria.
 
- 15. Simular el con funcionamiento de un Entrenamiento de Básquet donde hay 20 jugadores y UN entrenador. El entrenador debe distribuir a los jugadores en 2 canchas. Cuando un jugador llega el entrenador le indica la cancha a la cual debe ir para que se dirija a ella y espere hasta que lleguen los 10; en ese momento comienzan a jugar el partido que dura 40 minutos. Cuando ambos partidos han terminado, el entrenador les da a los 20 jugadores una charla de 10 minutos y luego todos se retiran. El entrenador asigna el número de cancha en forma cíclica 1, 2, 1, 2 y así sucesivamente.
+ 3.  Simular el con funcionamiento de un Entrenamiento de Básquet donde hay 20 jugadores y UN entrenador. El entrenador debe distribuir a los jugadores en 2 canchas. Cuando un jugador llega el entrenador le indica la cancha a la cual debe ir para que se dirija a ella y espere hasta que lleguen los 10; en ese momento comienzan a jugar el partido que dura 40 minutos. Cuando ambos partidos han terminado, el entrenador les da a los 20 jugadores una charla de 10 minutos y luego todos se retiran. El entrenador asigna el número de cancha en forma cíclica 1, 2, 1, 2 y así sucesivamente.
 
- 16.  En una empresa de organización de recitales cuentan con un sitio web para la venta de entradas. Existen N personas que quieran comprar una de las E entradas disponibles. Las personas se dividen en pacientes e impacientes. Cuando las personas pacientes intentan hacer la compra en el sitio web, esperan a lo sumo 5 minutos a que el servidor responda. Si pasado ese tiempo no fueran atendidas, lo vuelven a intentar. En el caso de las personas impacientes, si no son atendidas inmediatamente por el servidor, esperan 10 segundos y vuelvan a intentarlo. En todos los casos, el sitio web les dice si pudieron venderle la entrada o no.
+ 4.   En una empresa de organización de recitales cuentan con un sitio web para la venta de entradas. Existen N personas que quieran comprar una de las E entradas disponibles. Las personas se dividen en pacientes e impacientes. Cuando las personas pacientes intentan hacer la compra en el sitio web, esperan a lo sumo 5 minutos a que el servidor responda. Si pasado ese tiempo no fueran atendidas, lo vuelven a intentar. En el caso de las personas impacientes, si no son atendidas inmediatamente por el servidor, esperan 10 segundos y vuelvan a intentarlo. En todos los casos, el sitio web les dice si pudieron venderle la entrada o no.
 
- 17. Simular el funcionamiento de un Complejo de Canchas de Paddle que posee 10 canchas y donde hay UN encargado que se encarga de distribuir a las personas en las canchas. Al complejo acuden 40 personas a jugar. Cuando una persona llega el encargado le indique el número de cancha a la cual debe ir, y se dirige a ella; cuando han llegado los 4 jugadores a la cancha, comienzan a jugar el partido que dura 60 minutos; al terminar el partido las 4 personas se retiran. El encargado asigna el número de cancha según el orden de llegada (los 4 primeros a la cancha 1, los siguientes 4 a la 2 y así sucesivamente). Nota: cuando el encargado ya atendió a las 40 personas debe terminar su ejecución.
- 18. La oficina central de una empresa de venta de indumentaria debe calcular cuántas veces fue vendido cada uno de los artículos de su catálogo. La empresa se compone de 100 sucursales y cada una de ellas maneja su propia base de datos de ventas. La oficina central cuenta con una herramienta que funciona de la siguiente manera: ante la consulta realizada para un artículo determinado, la herramienta envía el identificador del artículo a las sucursales, para que cada una calcule cuántas veces fue vendido en ella. Al final del procesamiento, la herramienta debe conocer cuántas veces fue vendido en total, considerando todas las sucursales. Cuando ha terminado de procesar un artículo comienza con el siguiente (suponga que la herramienta tiene una función generarArtículo() que retorna el siguiente ID a consultar). Nota: maximizar la concurrencia. Existe una función ObtenerVentas(ID) que retorna la cantidad de veces que fue vendido el artículo con identificador ID en la base de la sucursal que la llama.
+ 5.  Simular el funcionamiento de un Complejo de Canchas de Paddle que posee 10 canchas y donde hay UN encargado que se encarga de distribuir a las personas en las canchas. Al complejo acuden 40 personas a jugar. Cuando una persona llega el encargado le indique el número de cancha a la cual debe ir, y se dirige a ella; cuando han llegado los 4 jugadores a la cancha, comienzan a jugar el partido que dura 60 minutos; al terminar el partido las 4 personas se retiran. El encargado asigna el número de cancha según el orden de llegada (los 4 primeros a la cancha 1, los siguientes 4 a la 2 y así sucesivamente). Nota: cuando el encargado ya atendió a las 40 personas debe terminar su ejecución.
+ 6.  La oficina central de una empresa de venta de indumentaria debe calcular cuántas veces fue vendido cada uno de los artículos de su catálogo. La empresa se compone de 100 sucursales y cada una de ellas maneja su propia base de datos de ventas. La oficina central cuenta con una herramienta que funciona de la siguiente manera: ante la consulta realizada para un artículo determinado, la herramienta envía el identificador del artículo a las sucursales, para que cada una calcule cuántas veces fue vendido en ella. Al final del procesamiento, la herramienta debe conocer cuántas veces fue vendido en total, considerando todas las sucursales. Cuando ha terminado de procesar un artículo comienza con el siguiente (suponga que la herramienta tiene una función generarArtículo() que retorna el siguiente ID a consultar). Nota: maximizar la concurrencia. Existe una función ObtenerVentas(ID) que retorna la cantidad de veces que fue vendido el artículo con identificador ID en la base de la sucursal que la llama.
