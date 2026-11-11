@@ -1884,5 +1884,57 @@
 > - El servidor lleva la cuenta de las E entradas. Una sola entry alcanza: no hay prioridad entre pacientes e impacientes, lo que cambia es cómo llama cada uno.
 
  17. Simular el funcionamiento de un Complejo de Canchas de Paddle que posee 10 canchas y donde hay UN encargado que se encarga de distribuir a las personas en las canchas. Al complejo acuden 40 personas a jugar. Cuando una persona llega el encargado le indique el número de cancha a la cual debe ir, y se dirige a ella; cuando han llegado los 4 jugadores a la cancha, comienzan a jugar el partido que dura 60 minutos; al terminar el partido las 4 personas se retiran. El encargado asigna el número de cancha según el orden de llegada (los 4 primeros a la cancha 1, los siguientes 4 a la 2 y así sucesivamente). Nota: cuando el encargado ya atendió a las 40 personas debe terminar su ejecución.
+```ada
+    procedure ComplejoPaddle is
+
+        task Encargado is
+            entry pedirCancha(nro: OUT integer);
+        end Encargado;
+
+        task type Cancha is
+            entry llegar;
+            entry terminar;
+        end Cancha;
+
+        task type Persona;
+
+        canchas: array(1..10) of Cancha;
+        personas: array(1..40) of Persona;
+
+        task body Persona is
+            nro: integer;
+        begin
+            Encargado.pedirCancha(nro);
+            canchas(nro).llegar;
+            canchas(nro).terminar;          -- queda esperando hasta que termine el partido
+        end Persona;
+
+        task body Encargado is
+        begin
+            for i in 1..40 loop             -- atiende a las 40 personas y termina
+                accept pedirCancha(nro: OUT integer) do
+                    nro := (i - 1) / 4 + 1; -- los 4 primeros a la 1, los 4 siguientes a la 2...
+                end pedirCancha;
+            end loop;
+        end Encargado;
+
+        task body Cancha is
+        begin
+            for j in 1..4 loop              -- espera a que lleguen los 4 jugadores
+                accept llegar;
+            end loop;
+            delay 3600.0;                   -- partido de 60 minutos
+            for j in 1..4 loop              -- al terminar, se retiran los 4
+                accept terminar;
+            end loop;
+        end Cancha;
+
+    begin
+        null;
+    end ComplejoPaddle;
+```
+> - El encargado responde **apenas llega** cada persona (orden de llegada = cola FIFO de la entry); el número de cancha sale del contador `i`, sin cola ni ids.
+> - La espera de los 4 jugadores, el partido y la salida conjunta los maneja una task `Cancha` por cancha: `llegar` funciona como barrera, y `terminar` retiene a los jugadores hasta que pasan los 60 minutos.
+> - Todo termina: el encargado hace 40 `accept`, cada cancha juega un solo partido.
 
  18. La oficina central de una empresa de venta de indumentaria debe calcular cuántas veces fue vendido cada uno de los artículos de su catálogo. La empresa se compone de 100 sucursales y cada una de ellas maneja su propia base de datos de ventas. La oficina central cuenta con una herramienta que funciona de la siguiente manera: ante la consulta realizada para un artículo determinado, la herramienta envía el identificador del artículo a las sucursales, para que cada una calcule cuántas veces fue vendido en ella. Al final del procesamiento, la herramienta debe conocer cuántas veces fue vendido en total, considerando todas las sucursales. Cuando ha terminado de procesar un artículo comienza con el siguiente (suponga que la herramienta tiene una función generarArtículo() que retorna el siguiente ID a consultar). Nota: maximizar la concurrencia. Existe una función ObtenerVentas(ID) que retorna la cantidad de veces que fue vendido el artículo con identificador ID en la base de la sucursal que la llama.
