@@ -107,3 +107,21 @@ process Empleado {
 }
 ```
 El Empleado **nunca se queda esperando a uno en particular**: siempre puede encolar a los que llegan, aunque la máquina esté ocupada.
+
+---
+
+## ADA: modos de los parámetros de una entry
+
+| Modo | Dirección | Uso típico |
+|---|---|---|
+| `IN` | Llamador → task que acepta | Datos que se envían (boletas, examen, id) |
+| `OUT` | Task que acepta → llamador | Resultados (recibos, nota, orden) |
+| `IN OUT` | Ida y vuelta | Un valor que se envía y vuelve modificado (dinero → vuelto) |
+
+- Se escribe **`IN OUT`, con espacio y sin barra**. `IN/OUT` está mal.
+- Ejemplo:
+  ```ada
+  entry filaComun(boletas: IN text; dinero: IN OUT integer; recibos: OUT text);
+  ```
+- Los parámetros se separan con `;`, y los del mismo tipo y modo se pueden agrupar con `,`: `nota, orden: OUT integer`.
+- El `accept` repite exactamente la misma lista de parámetros que la `entry`.
