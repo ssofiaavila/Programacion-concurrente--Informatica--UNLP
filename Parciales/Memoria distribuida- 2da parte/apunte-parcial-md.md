@@ -125,3 +125,16 @@ El Empleado **nunca se queda esperando a uno en particular**: siempre puede enco
   ```
 - Los parámetros se separan con `;`, y los del mismo tipo y modo se pueden agrupar con `,`: `nota, orden: OUT integer`.
 - El `accept` repite exactamente la misma lista de parámetros que la `entry`.
+
+## ADA: entries sin parámetros
+
+Si una entry no tiene parámetros, **no lleva paréntesis** en ningún lado:
+
+```ada
+entry llegada;           -- declaración (no: entry llegada();)
+Profesor.llegada;        -- llamada     (no: Profesor.llegada();)
+accept llegada;          -- aceptación  (no: accept llegada() do null; end llegada;)
+```
+
+- Si el `accept` no tiene nada que hacer adentro, alcanza con `accept llegada;`. No hace falta `do null; end llegada;`.
+- Típico uso: avisos o barreras, como "llegué" o "terminé".
