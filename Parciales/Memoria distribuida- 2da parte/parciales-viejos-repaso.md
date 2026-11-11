@@ -1240,6 +1240,67 @@
 > - Ojo con los nombres: el parámetro de la entry no puede llamarse igual que la variable local (`e` vs `enunciado`).
 
  5. En un negocio de cobros digitales hay P personas que debn pasar por la única caja de cobros para realizar el pago de sus boletas. Las personas son atendidas de acuerdo con el orden de llegada, teniendo prioridad aquellos que deben pagar menos de 5 boletas de los que pagan más. Adicionalmente, las personas embarazadas y los ancianos tienen prioridad sobre los dos casos anteriores. Las personas entregan sus boletas al cajero y el dinero de pago; el cajero les devuelve el vuelto y los recibos de pago. 
+```ada
+    procedure CobroBoletas is
+
+        task Caja is
+            entry filaPrioridad(boletas: IN text; dinero: IN OUT integer; recibos: OUT text);
+            entry filaMenos5(boletas: IN text; dinero: IN OUT integer; recibos: OUT text);
+            entry filaComun(boletas: IN text; dinero: IN OUT integer; recibos: OUT text);
+        end Caja;
+
+        task type Persona;
+        personas: array(1..P) of Persona;
+
+        task body Persona is
+            boletas, recibos: text;
+            dinero, cantBoletas: integer;
+            tienePrioridad: boolean;
+        begin
+            boletas := obtenerBoletas();
+            dinero := obtenerDinero();
+            tienePrioridad := esEmbarazadaOAnciano();
+            cantBoletas := cant(boletas);
+            if tienePrioridad then
+                Caja.filaPrioridad(boletas, dinero, recibos);
+            elsif cantBoletas < 5 then
+                Caja.filaMenos5(boletas, dinero, recibos);
+            else
+                Caja.filaComun(boletas, dinero, recibos);
+            end if;
+        end Persona;
+
+        task body Caja is
+        begin
+            loop
+                select
+                    accept filaPrioridad(boletas: IN text; dinero: IN OUT integer; recibos: OUT text) do
+                        dinero := cobrar(boletas, dinero);      -- devuelve el vuelto
+                        recibos := generarRecibos(boletas);
+                    end filaPrioridad;
+                or
+                    when (filaPrioridad'count = 0) =>
+                        accept filaMenos5(boletas: IN text; dinero: IN OUT integer; recibos: OUT text) do
+                            dinero := cobrar(boletas, dinero);
+                            recibos := generarRecibos(boletas);
+                        end filaMenos5;
+                or
+                    when (filaPrioridad'count = 0 and filaMenos5'count = 0) =>
+                        accept filaComun(boletas: IN text; dinero: IN OUT integer; recibos: OUT text) do
+                            dinero := cobrar(boletas, dinero);
+                            recibos := generarRecibos(boletas);
+                        end filaComun;
+                end select;
+            end loop;
+        end Caja;
+
+    begin
+        null;
+    end CobroBoletas;
+```
+> - Una entry por nivel de prioridad: cada cola de entry es FIFO, así que dentro de cada nivel se respeta el orden de llegada.
+> - Las guardas con `'count` dan la prioridad: embarazadas/ancianos > menos de 5 boletas > resto.
+> - "Menos de 5" es `< 5`, no `<= 5`. En Ada el modo es `IN OUT` (sin barra).
 
  6.  Se debe modelar la atención en un banco por medio de un único empleado. Los clientes llegan y esperan a lo sumo 10 minutos a ser atendido de acuerdo al orden de llegada. Pasado ese tiempo se retira sin ser atendido.
 
