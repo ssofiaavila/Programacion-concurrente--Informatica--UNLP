@@ -1648,6 +1648,78 @@
  • Escritor: intenta acceder para escribir, si no lo logra inmediatamente, espera 1 minuto y vuelve a intentarlo de la misma manera.
  • Lector: intenta acceder para leer, si no lo logró en 2 minutos, espera 5 minutos y vuelve a intentarlo de la misma manera. 
  Un proceso Escritor podrá acceder si no hay ningún otro proceso usando la base de datos; al acceder escribe y sale de la BD. Un proceso Lector podrá acceder si no hay procesos Escritores usando la base de datos; al acceder lee y sale de la BD. Siempre se le debe dar prioridad al pedido de acceso para escribir sobre el pedido de acceso para leer.
+```ada
+    procedure BaseDeDatos is
+
+        task BD is
+            entry inicioLectura;
+            entry finLectura;
+            entry escribir(dato: IN text);
+        end BD;
+
+        task type Lector;
+        task type Escritor;
+        lectores: array(1..L) of Lector;
+        escritores: array(1..E) of Escritor;
+
+        task body Escritor is
+            dato: text;
+        begin
+            loop
+                dato := generarDato();
+                loop
+                    select                          -- llamada condicional: o entra ya, o nada
+                        BD.escribir(dato);
+                        exit;                       -- pudo escribir: sale del loop de reintentos
+                    else
+                        delay 60.0;                 -- espera 1 minuto y reintenta
+                    end select;
+                end loop;
+            end loop;
+        end Escritor;
+
+        task body Lector is
+            info: text;
+        begin
+            loop
+                select                              -- llamada temporizada: espera hasta 2 minutos
+                    BD.inicioLectura;
+                    info := leer();                 -- fuera del rendezvous: varios lectores leen a la vez
+                    BD.finLectura;
+                or delay 120.0;
+                    delay 300.0;                    -- no pudo: espera 5 minutos y reintenta
+                end select;
+            end loop;
+        end Lector;
+
+        task body BD is
+            cantLectores: integer := 0;
+        begin
+            loop
+                select
+                    when (cantLectores = 0) =>
+                        accept escribir(dato: IN text) do
+                            escribirDato(dato);
+                        end escribir;
+                or
+                    when (escribir'count = 0) =>
+                        accept inicioLectura;
+                        cantLectores := cantLectores + 1;
+                or
+                    accept finLectura;
+                    cantLectores := cantLectores - 1;
+                end select;
+            end loop;
+        end BD;
+
+    begin
+        null;
+    end BaseDeDatos;
+```
+> - **Lectores concurrentes:** la lectura no puede ir dentro de un `accept` (eso la serializa). Se usa `inicioLectura`/`finLectura` con un contador, y se lee entre medio, fuera del rendezvous.
+> - **Escritor exclusivo:** solo se acepta `escribir` si `cantLectores = 0`; la escritura sí va dentro del `accept`, así nadie más entra mientras escribe.
+> - **Prioridad a escritores:** `inicioLectura` tiene la guarda `escribir'count = 0`.
+> - Escritor: llamada condicional (`select ... else`) + `exit` para salir del loop de reintentos. Lector: llamada temporizada (`or delay 120.0`) y, si falla, `delay 300.0`.
 
  1.   la página web del Banco Central exhibe las diferentes cotizaciones del dólar oficial de 20 bancos del país, tanto para la compra como para la venta. Existe una tarea programada que se ocupa de actualizar la página en forma periódica y para ello consulta la cotización de cada uno de los 20 bancos. Cada banco dispone de una API, cuya única función es procesar las solicitudes de aplicaciones externas. La tarea programada consulta de a una API por vez, esperando a lo sumo 5 segundos por su respuesta. Si pasado ese tiempo no respondió, entonces se mostrará vacía la información de ese banco.
 
