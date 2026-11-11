@@ -1938,3 +1938,52 @@
 > - Todo termina: el encargado hace 40 `accept`, cada cancha juega un solo partido.
 
  18. La oficina central de una empresa de venta de indumentaria debe calcular cuántas veces fue vendido cada uno de los artículos de su catálogo. La empresa se compone de 100 sucursales y cada una de ellas maneja su propia base de datos de ventas. La oficina central cuenta con una herramienta que funciona de la siguiente manera: ante la consulta realizada para un artículo determinado, la herramienta envía el identificador del artículo a las sucursales, para que cada una calcule cuántas veces fue vendido en ella. Al final del procesamiento, la herramienta debe conocer cuántas veces fue vendido en total, considerando todas las sucursales. Cuando ha terminado de procesar un artículo comienza con el siguiente (suponga que la herramienta tiene una función generarArtículo() que retorna el siguiente ID a consultar). Nota: maximizar la concurrencia. Existe una función ObtenerVentas(ID) que retorna la cantidad de veces que fue vendido el artículo con identificador ID en la base de la sucursal que la llama.
+```ada
+    procedure Empresa is
+
+        task type Sucursal is
+            entry solicitudConsulta(id: IN integer);
+        end Sucursal;
+
+        task Central is
+            entry enviarStock(cant: IN integer);
+        end Central;
+
+        sucursales: array(1..100) of Sucursal;
+
+        task body Central is
+            total, idArt: integer;
+        begin
+            loop
+                idArt := generarArticulo();
+                total := 0;                             -- se reinicia por cada artículo
+                for i in 1..100 loop
+                    sucursales(i).solicitudConsulta(idArt);
+                end loop;
+                for i in 1..100 loop
+                    accept enviarStock(cant: IN integer) do
+                        total := total + cant;
+                    end enviarStock;
+                end loop;
+                informar(idArt, total);
+            end loop;
+        end Central;
+
+        task body Sucursal is
+            idArt, cant: integer;
+        begin
+            loop
+                accept solicitudConsulta(id: IN integer) do
+                    idArt := id;                        -- solo copia: rendezvous corto
+                end solicitudConsulta;
+                cant := ObtenerVentas(idArt);           -- fuera del rendezvous: las 100 en paralelo
+                Central.enviarStock(cant);
+            end loop;
+        end Sucursal;
+
+    begin
+        null;
+    end Empresa;
+```
+> - Para declarar un arreglo de tasks hace falta `task type`; `task Sucursal` declara una sola tarea.
+> - Mismo patrón que el ejercicio 14: reparto con rendezvous cortos, cálculo en paralelo fuera del rendezvous y respuesta con una llamada aparte.
