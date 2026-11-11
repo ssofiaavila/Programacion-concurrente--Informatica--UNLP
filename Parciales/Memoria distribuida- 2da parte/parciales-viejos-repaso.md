@@ -1190,6 +1190,58 @@
 ```
 
  3. Se quiere modelar un puente colgante de un solo sentido, el cual resiste hasta 100 personas. Suponga que hay una cantidad innumerable de personas que quieren cruzar y que solo lo podrían hacer si no superan la cantidad máxima. Las personas cruzan el puente de acuerdo al orden de llegada, aunque los jubilados tienen prioridad sobre los no jubilados. 
+```ada
+    procedure PuenteColgante is
+
+        task Puente is
+            entry entrarJubilado;
+            entry entrarComun;
+            entry salir;
+        end Puente;
+
+        task type Persona;
+        personas: array(1..N) of Persona;      -- "innumerables": N arbitrariamente grande
+
+        task body Persona is
+            jubilado: boolean;
+        begin
+            jubilado := esJubilado();
+            if jubilado then
+                Puente.entrarJubilado;
+            else
+                Puente.entrarComun;
+            end if;
+            cruzar();                           -- fuera del rendezvous: cruzan varios a la vez
+            Puente.salir;
+        end Persona;
+
+        task body Puente is
+            cant: integer := 0;                 -- personas sobre el puente
+        begin
+            loop
+                select
+                    when (cant < 100) =>
+                        accept entrarJubilado;
+                        cant := cant + 1;
+                or
+                    when (cant < 100 and entrarJubilado'count = 0) =>
+                        accept entrarComun;
+                        cant := cant + 1;
+                or
+                    accept salir;
+                    cant := cant - 1;
+                end select;
+            end loop;
+        end Puente;
+
+    begin
+        null;
+    end PuenteColgante;
+```
+> - El puente lleva la cuenta de cuántos hay arriba: solo deja entrar si `cant < 100`; `salir` siempre se acepta (si no, se trabaría con el puente lleno).
+> - Prioridad: los comunes entran solo si no hay jubilados esperando (`entrarJubilado'count = 0`). Dentro de cada grupo, orden de llegada (cola FIFO de cada entry).
+> - El cruce se hace **entre** `entrar` y `salir`, fuera del rendezvous, para que puedan cruzar hasta 100 al mismo tiempo (mismo patrón que lectores en el ejercicio 12).
+> - Las entries sin parámetros van sin paréntesis y su `accept` sin `do ... end`.
 
  4. En una competencia de programadores hay P participantes y UN coordinador. El coordinador entrega el problema a resolver a los participantes y recibe las resoluciones para corregir. Cada participante debe conocer el resultado de su trabajo y el orden en que entregó su resolución Nota: Maximizar la concurrencia. 
 ```ada
