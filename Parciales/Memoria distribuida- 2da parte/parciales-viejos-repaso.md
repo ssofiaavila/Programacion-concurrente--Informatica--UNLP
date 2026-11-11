@@ -1192,6 +1192,52 @@
  3. Se quiere modelar un puente colgante de un solo sentido, el cual resiste hasta 100 personas. Suponga que hay una cantidad innumerable de personas que quieren cruzar y que solo lo podrían hacer si no superan la cantidad máxima. Las personas cruzan el puente de acuerdo al orden de llegada, aunque los jubilados tienen prioridad sobre los no jubilados. 
 
  4. En una competencia de programadores hay P participantes y UN coordinador. El coordinador entrega el problema a resolver a los participantes y recibe las resoluciones para corregir. Cada participante debe conocer el resultado de su trabajo y el orden en que entregó su resolución Nota: Maximizar la concurrencia. 
+```ada
+    procedure Competencia is
+
+        task type Participante is
+            entry entregarEnunciado(e: IN text);
+        end Participante;
+
+        task Coordinador is
+            entry entregarExamen(examen: IN text; nota, orden: OUT integer);
+        end Coordinador;
+
+        participantes: array(1..P) of Participante;
+
+        task body Participante is
+            enunciado, examen: text;
+            nota, orden: integer;
+        begin
+            accept entregarEnunciado(e: IN text) do
+                enunciado := e;
+            end entregarEnunciado;
+            examen := resolverEnunciado(enunciado);
+            Coordinador.entregarExamen(examen, nota, orden);
+        end Participante;
+
+        task body Coordinador is
+            enunciado: text;
+        begin
+            enunciado := generarEnunciado();
+            for i in 1..P loop
+                participantes(i).entregarEnunciado(enunciado);
+            end loop;
+            for i in 1..P loop
+                accept entregarExamen(examen: IN text; nota, orden: OUT integer) do
+                    orden := i;
+                    nota := corregirExamen(examen);
+                end entregarExamen;
+            end loop;
+        end Coordinador;
+
+    begin
+        null;
+    end Competencia;
+```
+> - El orden de entrega sale del contador `i` del `for`: la cola de la entry `entregarExamen` es FIFO, así que el i-ésimo aceptado es el i-ésimo en entregar.
+> - Corregir dentro del `accept` no resta concurrencia: hay un solo coordinador (corrige de a uno igual) y el participante no tiene nada más que hacer que esperar su nota.
+> - Ojo con los nombres: el parámetro de la entry no puede llamarse igual que la variable local (`e` vs `enunciado`).
 
  5. En un negocio de cobros digitales hay P personas que debn pasar por la única caja de cobros para realizar el pago de sus boletas. Las personas son atendidas de acuerdo con el orden de llegada, teniendo prioridad aquellos que deben pagar menos de 5 boletas de los que pagan más. Adicionalmente, las personas embarazadas y los ancianos tienen prioridad sobre los dos casos anteriores. Las personas entregan sus boletas al cajero y el dinero de pago; el cajero les devuelve el vuelto y los recibos de pago. 
 
