@@ -1454,7 +1454,7 @@
 
         task type Cliente is
             entry identificar(id: IN integer);
-            entry resultado(res: IN integer);
+            entry resultado(r: IN integer);
         end Cliente;
 
         task Admin is
