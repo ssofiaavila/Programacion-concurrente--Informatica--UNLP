@@ -1722,6 +1722,51 @@
 > - Escritor: llamada condicional (`select ... else`) + `exit` para salir del loop de reintentos. Lector: llamada temporizada (`or delay 120.0`) y, si falla, `delay 300.0`.
 
  1.   la página web del Banco Central exhibe las diferentes cotizaciones del dólar oficial de 20 bancos del país, tanto para la compra como para la venta. Existe una tarea programada que se ocupa de actualizar la página en forma periódica y para ello consulta la cotización de cada uno de los 20 bancos. Cada banco dispone de una API, cuya única función es procesar las solicitudes de aplicaciones externas. La tarea programada consulta de a una API por vez, esperando a lo sumo 5 segundos por su respuesta. Si pasado ese tiempo no respondió, entonces se mostrará vacía la información de ese banco.
+```ada
+    procedure BancoCentral is
+
+        task type Banco is
+            entry obtenerCotizacion(compra, venta: OUT real);
+        end Banco;
+
+        task TareaProgramada;
+        bancos: array(1..20) of Banco;
+
+        task body Banco is
+        begin
+            loop                                    -- la API atiende solicitudes indefinidamente
+                accept obtenerCotizacion(compra, venta: OUT real) do
+                    compra := cotizacionCompra();
+                    venta := cotizacionVenta();
+                end obtenerCotizacion;
+            end loop;
+        end Banco;
+
+        task body TareaProgramada is
+            compras, ventas: array(1..20) of real;
+            vacio: array(1..20) of boolean;
+        begin
+            loop                                    -- actualiza la página en forma periódica
+                for i in 1..20 loop                 -- una API por vez
+                    select
+                        bancos(i).obtenerCotizacion(compras(i), ventas(i));
+                        vacio(i) := false;
+                    or delay 5.0;                   -- a lo sumo 5 segundos
+                        vacio(i) := true;           -- se muestra vacía la info de ese banco
+                    end select;
+                end loop;
+                actualizarPagina(compras, ventas, vacio);
+                delay periodo;
+            end loop;
+        end TareaProgramada;
+
+    begin
+        null;
+    end BancoCentral;
+```
+> - Llamada temporizada (`select ... or delay 5.0`) desde la tarea programada, de a un banco por vez (`for`).
+> - Banco y TareaProgramada con `loop`: la actualización es periódica y la API atiende siempre; sin el loop, el banco respondería una sola vez y la segunda vuelta haría timeout en todos.
+> - Se piden compra **y** venta, y "vacía" se marca con un booleano en vez de un 0 (0 podría confundirse con una cotización).
 
  2.   Una empresa de venta de calzado cuenta con S sedes. En la oficina central de la empresa se utiliza un sistema que permite controlar el stock de los diferentes modelos, ya que cada sede tiene una base de datos propia. El sistema de control de stock funciona de la siguiente manera: dado un modelo determinado, lo envía a las sedes para que cada una le devuelva la cantidad disponible en ellas; al final del procesamiento, el sistema informa el total de calzados disponibles de dicho modelo. Una vez que se completó el procesamiento de un modelo, se procede a realizar lo mismo con el siguiente modelo. Nota: suponga que existe una función DevolverStock(modelo,cantidad) que utiliza cada sede donde recibe como parámetro de entrada el modelo de calzado y retorna como parámetro de salida la cantidad de pares disponibles. Maximizar la concurrencia y no generar demora innecesaria.
 
