@@ -1522,6 +1522,68 @@
 > - El servidor responde directo al cliente con `clientes(idC).resultado`; el cliente conoce su id porque se lo pasa el programa principal con `identificar`.
 
  10. En un negocio hay un empleado para atender los pedidos de clientes de N clientes; algunos clientes son ancianos o embarazadas. El empleado atiende los pedidos de acuerdo a la siguiente prioridad: primero las embarazadas, luego los ancianos, y por último el resto. Cada cliente hace sólo un pedido de la siguiente manera: en el caso de las embarazadas, si no son atendidas inmediatamente se retiran; en el caso de los ancianos, esperan a los sumo 5 minutos a ser atendidos, y si no se retira; cualquier otro cliente espera sí o sí hasta ser atendido. El empleado atiende a los clientes de acuerdo al orden de llegada pero manteniendo las siguientes prioridades: primero las embarazadas, luego los ancianos y luego el resto. Nota: suponga que existe una función AtenderPedido() que simula que el empleado está atendiendo a un cliente.
+```ada
+    procedure Negocio is
+
+        task Empleado is
+            entry filaEmbarazadas;
+            entry filaAncianos;
+            entry filaComun;
+        end Empleado;
+
+        task type Cliente;
+        clientes: array(1..N) of Cliente;
+
+        task body Cliente is
+            tipo: text;
+        begin
+            tipo := obtenerTipo();
+            if tipo = "embarazada" then
+                select                          -- llamada condicional: si no la atienden ya, se va
+                    Empleado.filaEmbarazadas;
+                else
+                    null;
+                end select;
+            elsif tipo = "anciano" then
+                select                          -- llamada temporizada: espera a lo sumo 5 minutos
+                    Empleado.filaAncianos;
+                or delay 300.0;
+                    null;
+                end select;
+            else
+                Empleado.filaComun;             -- espera sí o sí
+            end if;
+        end Cliente;
+
+        task body Empleado is
+        begin
+            loop
+                select
+                    accept filaEmbarazadas do
+                        AtenderPedido();
+                    end filaEmbarazadas;
+                or
+                    when (filaEmbarazadas'count = 0) =>
+                        accept filaAncianos do
+                            AtenderPedido();
+                        end filaAncianos;
+                or
+                    when (filaEmbarazadas'count = 0 and filaAncianos'count = 0) =>
+                        accept filaComun do
+                            AtenderPedido();
+                        end filaComun;
+                end select;
+            end loop;
+        end Empleado;
+
+    begin
+        null;
+    end Negocio;
+```
+> - Embarazadas: **llamada condicional** (`select ... else`): solo se concreta si el empleado puede aceptarla en ese instante.
+> - Ancianos: **llamada temporizada** (`select ... or delay 300.0`): 5 minutos = 300 segundos.
+> - Resto: llamada común, espera hasta ser atendido.
+> - `AtenderPedido()` va dentro del `accept` porque el cliente tiene que quedar retenido mientras lo atienden.
 
  11. Se quiere modelar el funcionamiento de un banco, al cual llegan clientes que deben realizar un pago y llevarse su comprobante. Los clientes se dividen entre los regulares y los premium, habiendo R clientes regulares y P clientes premium. Existe un único empleado en el banco, el cual atiende de acuerdo al orden de llegada, pero dando prioridad a los premium sobre los regulares. Si a los 30 minutos de llegar un cliente regular no fue atendido, entonces se retira sin realizar el pago. Los clientes premium siempre esperan hasta ser atendidos.
 
