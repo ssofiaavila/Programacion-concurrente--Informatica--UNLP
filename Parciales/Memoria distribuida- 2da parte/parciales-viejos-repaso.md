@@ -1303,8 +1303,94 @@
 > - "Menos de 5" es `< 5`, no `<= 5`. En Ada el modo es `IN OUT` (sin barra).
 
  6.  Se debe modelar la atención en un banco por medio de un único empleado. Los clientes llegan y esperan a lo sumo 10 minutos a ser atendido de acuerdo al orden de llegada. Pasado ese tiempo se retira sin ser atendido.
+```ada
+    procedure Banco is
+
+        task Empleado is
+            entry atencion(respuesta: OUT text);
+        end Empleado;
+
+        task type Cliente;
+        clientes: array(1..N) of Cliente;
+
+        task body Cliente is
+            rta: text;
+        begin
+            select
+                Empleado.atencion(rta);
+            or delay 600.0;          -- 10 minutos
+                null;                -- se retira sin ser atendido
+            end select;
+        end Cliente;
+
+        task body Empleado is
+        begin
+            loop
+                accept atencion(respuesta: OUT text) do
+                    respuesta := atenderCliente();
+                end atencion;
+            end loop;
+        end Empleado;
+
+    begin
+        null;
+    end Banco;
+```
+> - Llamada temporizada (`select ... or delay`): si en 10 minutos el empleado no **empezó** a atenderlo, se cancela la llamada y el cliente se va. Si ya empezó el rendezvous, espera a que termine.
+> - La cola de la entry es FIFO → orden de llegada.
+> - El tipo de la variable que se pasa tiene que coincidir con el del parámetro (`rta: text` ↔ `respuesta: OUT text`).
 
  7. Hay E estudiantes que rinden un examen final y un profesor que cuando todos los estudiantes han llegado les entrega el enunciado, luego el profesor va corrigiendo los exámenes y enviando la nota con orden en que se van entregando. Cada alumno realiza el examen, lo entrega y espera a que el profesor le indique la nota. Nota: Maximizar la concurrencia, no realizar busy waiting, todos los procesos deben terminar. 
+```ada
+    procedure ExamenFinal is
+
+        task type Alumno is
+            entry recibirEnunciado(e: IN text);
+        end Alumno;
+
+        task Profesor is
+            entry llegada;
+            entry correccion(examen: IN text; nota: OUT integer);
+        end Profesor;
+
+        alumnos: array(1..E) of Alumno;
+
+        task body Alumno is
+            enunciado, examen: text;
+            nota: integer;
+        begin
+            Profesor.llegada;
+            accept recibirEnunciado(e: IN text) do
+                enunciado := e;
+            end recibirEnunciado;
+            examen := resolver(enunciado);
+            Profesor.correccion(examen, nota);
+        end Alumno;
+
+        task body Profesor is
+            enunciado: text;
+        begin
+            for i in 1..E loop
+                accept llegada;
+            end loop;
+            enunciado := generarEnunciado();
+            for i in 1..E loop
+                alumnos(i).recibirEnunciado(enunciado);
+            end loop;
+            for i in 1..E loop
+                accept correccion(examen: IN text; nota: OUT integer) do
+                    nota := corregir(examen);
+                end correccion;
+            end loop;
+        end Profesor;
+
+    begin
+        null;
+    end ExamenFinal;
+```
+> - El primer `for` es la barrera: el profesor no reparte el enunciado hasta recibir las E llegadas.
+> - Entry sin parámetros: se declara `entry llegada;`, se llama `Profesor.llegada;` y se acepta `accept llegada;` (sin paréntesis ni `do null; end`).
+> - Las correcciones salen en el orden de entrega porque la cola de `correccion` es FIFO. Todas las tareas terminan: los `for` tienen exactamente E vueltas.
 
  8. En la farmacia de un hospital hay una única ventanilla para dispensar medicamentos. Los P pacientes internados deben retirar sus medicamentos presentando una receta (un único retiro por persona). Los pacientes son atendidos en el orden de llegada, pero con prioridad de atención: los pacientes de urgencia tienen prioridad sobre los de internación general, y ambos tienen prioridad sobre los pacientes ambulatorios. Cada paciente entrega su receta y recibe la medicación correspondiente. Notas: la función obtenerPrioridad() le permite al paciente conocer su prioridad (retorna 0 si el paciente es de urgencia, 1 si es internado general, o 2 si es ambulatorio). La función obtenerReceta() retorna la receta para el paciente que la invoca mientras que dispensarMedicamento(receta) le retorna al empleado el medicamento para la receta indicada. El empleado atiende de a un paciente por vez, según la prioridad indicada. Todas las tareas deben finalizar. 
 
