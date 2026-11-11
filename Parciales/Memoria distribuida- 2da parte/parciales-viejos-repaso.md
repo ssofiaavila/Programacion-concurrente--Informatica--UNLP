@@ -1769,6 +1769,55 @@
 > - Se piden compra **y** venta, y "vacía" se marca con un booleano en vez de un 0 (0 podría confundirse con una cotización).
 
  2.   Una empresa de venta de calzado cuenta con S sedes. En la oficina central de la empresa se utiliza un sistema que permite controlar el stock de los diferentes modelos, ya que cada sede tiene una base de datos propia. El sistema de control de stock funciona de la siguiente manera: dado un modelo determinado, lo envía a las sedes para que cada una le devuelva la cantidad disponible en ellas; al final del procesamiento, el sistema informa el total de calzados disponibles de dicho modelo. Una vez que se completó el procesamiento de un modelo, se procede a realizar lo mismo con el siguiente modelo. Nota: suponga que existe una función DevolverStock(modelo,cantidad) que utiliza cada sede donde recibe como parámetro de entrada el modelo de calzado y retorna como parámetro de salida la cantidad de pares disponibles. Maximizar la concurrencia y no generar demora innecesaria.
+```ada
+    procedure Fabrica is
+
+        task type Sede is
+            entry analizarStock(m: IN integer);
+        end Sede;
+
+        task Central is
+            entry obtenerCant(cant: IN integer);
+        end Central;
+
+        sedes: array(1..S) of Sede;
+
+        task body Sede is
+            modelo, cantidad: integer;
+        begin
+            loop
+                accept analizarStock(m: IN integer) do
+                    modelo := m;                        -- solo copia: rendezvous corto
+                end analizarStock;
+                DevolverStock(modelo, cantidad);        -- fuera del rendezvous: todas las sedes en paralelo
+                Central.obtenerCant(cantidad);
+            end loop;
+        end Sede;
+
+        task body Central is
+            modelo, total: integer;
+        begin
+            loop
+                modelo := generarModelo();
+                total := 0;
+                for i in 1..S loop
+                    sedes(i).analizarStock(modelo);
+                end loop;
+                for i in 1..S loop
+                    accept obtenerCant(cant: IN integer) do
+                        total := total + cant;
+                    end obtenerCant;
+                end loop;
+                informar(modelo, total);
+            end loop;
+        end Central;
+
+    begin
+        null;
+    end Fabrica;
+```
+> - Mismo patrón que el de las sucursales: la Central reparte el modelo con rendezvous cortos, las sedes calculan en paralelo fuera del rendezvous y devuelven la cantidad con una llamada aparte.
+> - Una sede no puede recibir el modelo siguiente antes de entregar su cantidad, y la Central no reparte otro modelo hasta juntar las S respuestas.
 
  3.  Simular el con funcionamiento de un Entrenamiento de Básquet donde hay 20 jugadores y UN entrenador. El entrenador debe distribuir a los jugadores en 2 canchas. Cuando un jugador llega el entrenador le indica la cancha a la cual debe ir para que se dirija a ella y espere hasta que lleguen los 10; en ese momento comienzan a jugar el partido que dura 40 minutos. Cuando ambos partidos han terminado, el entrenador les da a los 20 jugadores una charla de 10 minutos y luego todos se retiran. El entrenador asigna el número de cancha en forma cíclica 1, 2, 1, 2 y así sucesivamente.
 
