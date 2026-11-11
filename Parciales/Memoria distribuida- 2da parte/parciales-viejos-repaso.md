@@ -1586,6 +1586,63 @@
 > - `AtenderPedido()` va dentro del `accept` porque el cliente tiene que quedar retenido mientras lo atienden.
 
  11. Se quiere modelar el funcionamiento de un banco, al cual llegan clientes que deben realizar un pago y llevarse su comprobante. Los clientes se dividen entre los regulares y los premium, habiendo R clientes regulares y P clientes premium. Existe un único empleado en el banco, el cual atiende de acuerdo al orden de llegada, pero dando prioridad a los premium sobre los regulares. Si a los 30 minutos de llegar un cliente regular no fue atendido, entonces se retira sin realizar el pago. Los clientes premium siempre esperan hasta ser atendidos.
+```ada
+    procedure Banco is
+
+        task Empleado is
+            entry filaRegular(boleta: IN text; dinero: IN OUT integer; comprobante: OUT text);
+            entry filaPremium(boleta: IN text; dinero: IN OUT integer; comprobante: OUT text);
+        end Empleado;
+
+        task type ClienteRegular;
+        task type ClientePremium;
+        clientesR: array(1..R) of ClienteRegular;
+        clientesP: array(1..P) of ClientePremium;
+
+        task body ClienteRegular is
+            boleta, comprobante: text;
+            dinero: integer;
+        begin
+            boleta := generarBoleta();
+            dinero := obtenerDinero();
+            select
+                Empleado.filaRegular(boleta, dinero, comprobante);
+            or delay 1800.0;            -- 30 minutos
+                null;                   -- se retira sin pagar
+            end select;
+        end ClienteRegular;
+
+        task body ClientePremium is
+            boleta, comprobante: text;
+            dinero: integer;
+        begin
+            boleta := generarBoleta();
+            dinero := obtenerDinero();
+            Empleado.filaPremium(boleta, dinero, comprobante);   -- espera siempre
+        end ClientePremium;
+
+        task body Empleado is
+        begin
+            loop
+                select
+                    accept filaPremium(boleta: IN text; dinero: IN OUT integer; comprobante: OUT text) do
+                        atender(boleta, dinero, comprobante);
+                    end filaPremium;
+                or
+                    when (filaPremium'count = 0) =>
+                        accept filaRegular(boleta: IN text; dinero: IN OUT integer; comprobante: OUT text) do
+                            atender(boleta, dinero, comprobante);
+                        end filaRegular;
+                end select;
+            end loop;
+        end Empleado;
+
+    begin
+        null;
+    end Banco;
+```
+> - Dos task types distintos porque se comportan distinto: el regular hace llamada temporizada (30 min = `delay 1800.0`), el premium llamada común.
+> - Prioridad: `filaRegular` solo se acepta si `filaPremium'count = 0`. Dentro de cada fila, orden de llegada (cola FIFO).
 
  12. Se debe controlar el acceso a una base de datos. Existen L procesos Lectores y E procesos Escritores que trabajan indefinidamente de la siguiente manera: 
  • Escritor: intenta acceder para escribir, si no lo logra inmediatamente, espera 1 minuto y vuelve a intentarlo de la misma manera.
