@@ -1393,6 +1393,60 @@
 > - Las correcciones salen en el orden de entrega porque la cola de `correccion` es FIFO. Todas las tareas terminan: los `for` tienen exactamente E vueltas.
 
  8. En la farmacia de un hospital hay una única ventanilla para dispensar medicamentos. Los P pacientes internados deben retirar sus medicamentos presentando una receta (un único retiro por persona). Los pacientes son atendidos en el orden de llegada, pero con prioridad de atención: los pacientes de urgencia tienen prioridad sobre los de internación general, y ambos tienen prioridad sobre los pacientes ambulatorios. Cada paciente entrega su receta y recibe la medicación correspondiente. Notas: la función obtenerPrioridad() le permite al paciente conocer su prioridad (retorna 0 si el paciente es de urgencia, 1 si es internado general, o 2 si es ambulatorio). La función obtenerReceta() retorna la receta para el paciente que la invoca mientras que dispensarMedicamento(receta) le retorna al empleado el medicamento para la receta indicada. El empleado atiende de a un paciente por vez, según la prioridad indicada. Todas las tareas deben finalizar. 
+```ada
+    procedure Farmacia is
+
+        task Empleado is
+            entry filaUrgencia(receta: IN text; medicamento: OUT text);
+            entry filaInternado(receta: IN text; medicamento: OUT text);
+            entry filaAmbulatorio(receta: IN text; medicamento: OUT text);
+        end Empleado;
+
+        task type Paciente;
+        pacientes: array(1..P) of Paciente;
+
+        task body Paciente is
+            prioridad: integer;
+            receta, medicamento: text;
+        begin
+            prioridad := obtenerPrioridad();
+            receta := obtenerReceta();
+            if prioridad = 0 then
+                Empleado.filaUrgencia(receta, medicamento);
+            elsif prioridad = 1 then
+                Empleado.filaInternado(receta, medicamento);
+            else
+                Empleado.filaAmbulatorio(receta, medicamento);
+            end if;
+        end Paciente;
+
+        task body Empleado is
+        begin
+            for i in 1..P loop          -- atiende exactamente P pacientes y termina
+                select
+                    accept filaUrgencia(receta: IN text; medicamento: OUT text) do
+                        medicamento := dispensarMedicamento(receta);
+                    end filaUrgencia;
+                or
+                    when (filaUrgencia'count = 0) =>
+                        accept filaInternado(receta: IN text; medicamento: OUT text) do
+                            medicamento := dispensarMedicamento(receta);
+                        end filaInternado;
+                or
+                    when (filaUrgencia'count = 0 and filaInternado'count = 0) =>
+                        accept filaAmbulatorio(receta: IN text; medicamento: OUT text) do
+                            medicamento := dispensarMedicamento(receta);
+                        end filaAmbulatorio;
+                end select;
+            end loop;
+        end Empleado;
+
+    begin
+        null;
+    end Farmacia;
+```
+> - "Todas las tareas deben finalizar": como cada paciente retira una sola vez, el empleado hace un `for` de P vueltas en vez de `loop` infinito.
+> - Prioridad con guardas `'count`: urgencia > internación general > ambulatorio; dentro de cada fila, orden de llegada (cola FIFO de la entry).
 
  9.  Hay un sitio web para identificación genética que resuelve pedidos de N clientes. Cada cliente trabaja continuamente de la siguiente manera: genera la secuencia de ADN, la envía al sitio web para evaluar y espera el resultado; después de esto puede comenzar a generar la siguiente secuencia de ADN. Para resolver estos pedidos el sitio web cuenta con 5 servidores idénticos que atienden los pedidos de acuerdo al orden de llegada (cada pedido es atendido por un único servicio). Nota: maximizar la concurrencia. Suponga que los servidores tienen una función ResolverAnalisis que recibe la secuencia de ADN y devuelve un entero con el resultado.
 ```ada
