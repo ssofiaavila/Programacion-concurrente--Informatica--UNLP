@@ -1822,6 +1822,66 @@
  15. Simular el con funcionamiento de un Entrenamiento de Básquet donde hay 20 jugadores y UN entrenador. El entrenador debe distribuir a los jugadores en 2 canchas. Cuando un jugador llega el entrenador le indica la cancha a la cual debe ir para que se dirija a ella y espere hasta que lleguen los 10; en ese momento comienzan a jugar el partido que dura 40 minutos. Cuando ambos partidos han terminado, el entrenador les da a los 20 jugadores una charla de 10 minutos y luego todos se retiran. El entrenador asigna el número de cancha en forma cíclica 1, 2, 1, 2 y así sucesivamente.
 
  16. En una empresa de organización de recitales cuentan con un sitio web para la venta de entradas. Existen N personas que quieran comprar una de las E entradas disponibles. Las personas se dividen en pacientes e impacientes. Cuando las personas pacientes intentan hacer la compra en el sitio web, esperan a lo sumo 5 minutos a que el servidor responda. Si pasado ese tiempo no fueran atendidas, lo vuelven a intentar. En el caso de las personas impacientes, si no son atendidas inmediatamente por el servidor, esperan 10 segundos y vuelvan a intentarlo. En todos los casos, el sitio web les dice si pudieron venderle la entrada o no.
+```ada
+    procedure VentaEntradas is
+
+        task Servidor is
+            entry comprar(dinero: IN integer; ok: OUT boolean);
+        end Servidor;
+
+        task type Persona;
+        personas: array(1..N) of Persona;
+
+        task body Persona is
+            dinero: integer;
+            ok, esPaciente: boolean;
+        begin
+            dinero := obtenerDinero();
+            esPaciente := esPersonaPaciente();
+            if esPaciente then
+                loop
+                    select                              -- llamada temporizada: hasta 5 minutos
+                        Servidor.comprar(dinero, ok);
+                        exit;                           -- fue atendida (con o sin entrada): termina
+                    or delay 300.0;
+                        null;                           -- no la atendieron: reintenta
+                    end select;
+                end loop;
+            else
+                loop
+                    select                              -- llamada condicional: o la atienden ya, o nada
+                        Servidor.comprar(dinero, ok);
+                        exit;
+                    else
+                        delay 10.0;                     -- espera 10 segundos y reintenta
+                    end select;
+                end loop;
+            end if;
+        end Persona;
+
+        task body Servidor is
+            disponibles: integer := E;
+        begin
+            for i in 1..N loop                          -- cada persona es atendida exactamente una vez
+                accept comprar(dinero: IN integer; ok: OUT boolean) do
+                    if disponibles > 0 then
+                        venderEntrada(dinero);
+                        disponibles := disponibles - 1;
+                        ok := true;
+                    else
+                        ok := false;
+                    end if;
+                end comprar;
+            end loop;
+        end Servidor;
+
+    begin
+        null;
+    end VentaEntradas;
+```
+> - Pacientes: llamada **temporizada** (`or delay 300.0`). Impacientes: llamada **condicional** (`else delay 10.0`): "si no son atendidas inmediatamente".
+> - El reintento termina cuando la persona **fue atendida**, no cuando consiguió entrada: si se agotaron, el servidor le responde `false` y se va. Por eso se usa `exit` y no `while not ok`.
+> - El servidor lleva la cuenta de las E entradas. Una sola entry alcanza: no hay prioridad entre pacientes e impacientes, lo que cambia es cómo llama cada uno.
 
  17. Simular el funcionamiento de un Complejo de Canchas de Paddle que posee 10 canchas y donde hay UN encargado que se encarga de distribuir a las personas en las canchas. Al complejo acuden 40 personas a jugar. Cuando una persona llega el encargado le indique el número de cancha a la cual debe ir, y se dirige a ella; cuando han llegado los 4 jugadores a la cancha, comienzan a jugar el partido que dura 60 minutos; al terminar el partido las 4 personas se retiran. El encargado asigna el número de cancha según el orden de llegada (los 4 primeros a la cancha 1, los siguientes 4 a la 2 y así sucesivamente). Nota: cuando el encargado ya atendió a las 40 personas debe terminar su ejecución.
 
