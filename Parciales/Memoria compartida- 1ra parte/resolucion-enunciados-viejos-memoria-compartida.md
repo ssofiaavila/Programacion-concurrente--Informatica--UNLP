@@ -139,6 +139,76 @@ process Jurado{
 ```
 
  4. En un examen final hay P alumnos y 3 profesores. Cuando todos los alumnos y los profesores han llegado comienza el examen. Para esto uno de los profesores (el primero en llegar) le da el examen a cada alumno. Cada alumno resuelve su examen, lo entrega y espera que alguno de los profesores lo corrija y le indique la nota. Los profesores corrigen los examenes respetando el orden en que los alumnos van entregando.
+    *Solución propia:*
+```
+int totalAlumnos= 0; sem sem_llegada= 1; sem sem_entregaEnunciados= 0;
+sem sem_enunciados[P]= ([P]0); text enunciados[P];
+int notas[P]; sem sem_entrega2= 1; sem sem_avisoEntrega= 0; queue colaE;
+sem sem_correccion[P]= ([P]0);
+int cantP= 0; sem sem_llegadaP= 1; sem sem_llegadaTodosP= 0;
+sem sem_inicioCorreccion[3]= ([3]0);
+
+process Alumno[i=1..P]{
+    text enunciado, examen;
+    int nota;
+
+    P(sem_llegada);
+    totalAlumnos++;
+    if (totalAlumnos == P){
+        V(sem_entregaEnunciados);
+    }
+    V(sem_llegada);
+    P(sem_enunciados[i]);
+    enunciado= enunciados[i];
+    examen= resolverEnunciado(enunciado);
+    P(sem_entrega2);
+    push(colaE, (i, examen));
+    V(sem_entrega2);
+    V(sem_avisoEntrega);
+    P(sem_correccion[i]);
+    nota= notas[i];
+}
+
+process Profesor[i=1..3]{
+    boolean entregar; text examen;
+    int idA, nota;
+
+    P(sem_llegadaP);
+    cantP++;
+    if (cantP == 1){
+        entregar= true;
+    }
+    else if (cantP == 3){
+        V(sem_llegadaTodosP);
+    }
+    V(sem_llegadaP);
+
+    if (entregar){
+        P(sem_entregaEnunciados);
+        P(sem_llegadaTodosP);
+        for i=1..P{
+            enunciados[i]= generarEnunciado();
+            V(sem_enunciados[i]);
+        }
+        for j=1..3{
+            V(sem_inicioCorreccion[j]);
+        }
+    }
+    else {
+        P(sem_inicioCorreccion[i]);
+    }
+
+    while(true){
+        P(sem_avisoEntrega);
+        P(sem_entrega2);
+        pop(colaE, (idA, examen));
+        V(sem_entrega2);
+        nota= corregir(examen);
+        notas[idA]= nota;
+        V(sem_correccion[idA]);
+    }
+}
+```
 
  5. Simular la atención de una planta verificadora de vehículos, donde se revisan cuestiones de seguridad de vehículos de a uno por vez. Hay N vehículos que deben ser verificados, donde algunos son autos y otros ambulancias. Antes de ser verificados, los autos deben hacer el pago correspondiente en la caja de la planta, donde le entregarán un recibo de pago. Las ambulancias NO pagan. Los vehículos son atendidos de acuerdo al orden de llegada pero dando prioridad a las ambulancias.
 
