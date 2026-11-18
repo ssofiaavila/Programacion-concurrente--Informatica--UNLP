@@ -339,6 +339,37 @@ process Repositor{
 ```
 
  8. Se tiene un vector A de 1.000.000 de números del cual se debe obtener el promedio de sus valores utilizando 10 procesos Worker. Al terminar todos los procesos deben imprimir el resultado. Maximizar concurrencia, únicamente se pueden usar los 10 procesos worker.
+    *Solución propia:*
+```
+sem mutexContador= 1; const tam= 1000000/10; int nros[1000000]; int terminaron= 0;
+int sumatoria= 0; int promedio; int promedios[10]; sem obtenerRtdo[10]= ([10]0);
+
+process Worker[i=1..10]{
+    int inicio= (i-1)*tam;
+    int fin= i*tam - 1;
+    int total= 0;
+    int rtdo;
+
+    for j=inicio..fin{
+        total= total + nros[j];
+    }
+
+    P(mutexContador);
+    sumatoria= sumatoria + total;
+    terminaron++;
+    if (terminaron == 10){
+        promedio= sumatoria / 1000000;
+        for (k=1..10){
+            promedios[k]= promedio;
+            V(obtenerRtdo[k]);
+        }
+    }
+    V(mutexContador);
+    P(obtenerRtdo[i]);
+    rtdo= promedios[i];
+    imprimir(rtdo);
+}
+```
 
  9. A una acopiadora de cereales llegan 20 camiones que deben descargar su cereal. Los camiones se descargan de a uno por vez, y de acuerdo con orden de llegada. Una vez que el camión llegó, espera a que llegue su turno para comenzar a descargar. Sólo se pueden usar procesos que representen a los camiones; cada camión descarga una sola vez; la descarga del camión se simula por medio de la función DESCARGAR() llamada por el camión.
 
