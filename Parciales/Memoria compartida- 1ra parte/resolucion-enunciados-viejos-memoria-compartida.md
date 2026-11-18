@@ -3,6 +3,58 @@
  1. En una planta verificadora de vehículos existen 7 estaciones donde se dirigen 150 vehículos para ser verificados. Cuando un vehículo llega a la planta, el coordinador de la planta le indica a qué estación debe dirigirse. El coordinador selecciona la estación que tenga menos vehículos en ese momento. Una vez qu el vehículo sabe qué estación le fue asignada, se dirige a la misma y espera a que lo llamen para verificar. Luego de la revisión, la estación le entrega un comprobante que indica si pasó la revisión o no. Más allá del resultado, el vehículo se retira de la planta.
     *Solución:* `Parciales/Soluciones años anteriores/PConcu-2022---Soluciones-parcial-MC.pdf` (parcial MC 11-10-22, ej. 1, págs. 1-2)
     *Solución a mano (no oficial):* `Parciales/Memoria compartida- 1ra parte/Parcial 1- 1ra fecha 2022.pdf` (ej. 1, pág. 1)
+    *Solución propia:*
+```
+process Vehiculo[i=1..150]{
+    int nroCabina;
+    text comprobante;
+
+    P(sem_entrada);
+    push(colaEspera, i);
+    V(sem_entrada);
+    V(sem_atencion);
+    P(sem_espera[i]);
+    nroCabina= estaciones[i];
+    P(sem_estacion[nroCabina]);
+    push(estacion[nroCabina], i);
+    V(sem_estacion[nroCabina]);
+    V(sem_estacion_atencion[nroCabina]);
+    P(sem_resultado[i]);
+    P(sem_cant_estaciones);
+    cant_estaciones[nroCabina]--;
+    V(sem_cant_estaciones);
+    comprobante= dobs[i];
+}
+
+process Entrada{
+    int id, id_min;
+
+    while(true){
+        P(sem_atencion);
+        P(sem_entrada);
+        pop(colaEspera, id);
+        V(sem_entrada);
+        P(sem_cant_estaciones);
+        id_min= min(cant_estaciones);
+        cant_estaciones[id_min]++;
+        V(sem_cant_estaciones);
+        estaciones[id]= id_min;
+        V(sem_espera[id]);
+    }
+}
+
+process Estacion[i=1..7]{
+    int id;
+    while(true){
+        P(sem_estacion_atencion[i]);
+        P(sem_estacion[i]);
+        id= pop(estacion[i]);
+        V(sem_estacion[i]);
+        dobs[id]= Verificar();
+        V(sem_resultado[id]);
+    }
+}
+```
 
  2. Una empresa de turismo posee un micro con capacidad para 50 personas. Hay un único vendedor que atiende a los C clientes (C > 50) que intentan comprar un pasaje de acuerdo al orden de llegada (suponga que la atención de un cliente tarda un par de minutos), si aún hay lugares disponibles, le indica el número de asiento que le tocó. Cada cliente, luego de ser atendidos por el vendedor, se dirige al micro para subir en caso de que le hayan dado un asiento. El micro espera a que los 50 pasajeros hayan subido para realizar el viaje.
 
