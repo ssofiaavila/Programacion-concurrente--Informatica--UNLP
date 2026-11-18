@@ -211,6 +211,58 @@ process Profesor[i=1..3]{
 ```
 
  5. Simular la atención de una planta verificadora de vehículos, donde se revisan cuestiones de seguridad de vehículos de a uno por vez. Hay N vehículos que deben ser verificados, donde algunos son autos y otros ambulancias. Antes de ser verificados, los autos deben hacer el pago correspondiente en la caja de la planta, donde le entregarán un recibo de pago. Las ambulancias NO pagan. Los vehículos son atendidos de acuerdo al orden de llegada pero dando prioridad a las ambulancias.
+    *Solución propia:*
+```
+sem mutexFila= 1; sem sem_espera[N]= ([N]0);
+queue filaE; int pagos[N]; sem dinero_abonado= 0;
+sem sem_esperaComprobante[N]= ([N]0); text recibos[N];
+sem aviso_atencion= 0;
+
+process Vehiculo[i=1..N]{
+    text tipoV, recibo;
+    int dinero;
+
+    tipoV= tipoVehiculo();
+    P(mutexFila);
+    if (tipoV == "ambulancia"){
+        insertarOrdenado(filaE, (i, tipoV));
+    }
+    else{
+        push(filaE, (i, tipoV));
+    }
+    V(mutexFila);
+    V(aviso_atencion);
+    P(sem_espera[i]);
+    if (tipoV == "auto"){
+        dinero= tarifa();
+        pagos[i]= dinero;
+        V(dinero_abonado);
+        P(sem_esperaComprobante[i]);
+        recibo= recibos[i];
+    }
+}
+
+process Verificador{
+    int idV, dinero; text tipo, recibo;
+
+    while(true){
+        P(aviso_atencion);
+        P(mutexFila);
+        pop(filaE, (idV, tipo));
+        V(mutexFila);
+        V(sem_espera[idV]);
+        if (tipo == "auto"){
+            P(dinero_abonado);
+            dinero= pagos[idV];
+            cobrar(dinero);
+            recibo= generarRecibo();
+            recibos[idV]= recibo;
+            V(sem_esperaComprobante[idV]);
+        }
+        Verificar();
+    }
+}
+```
 
  6. En una clínica hay un médico que debe atender a 20 personas de acuerdo al turno de cada uno de ellos (no puede atender al paciente con turno i+1 si no atendió al que tiene el turno i). Cada paciente ya conoce su turno al comenzar (valor entre 0 y 19 entre 1 y 20). Al llegar espera hasta que le médico lo llame para ser atendido, se dirige al consultorio y luego espera hasta que el médico que lo termine de atender para poder retirarse. Nota: los únicos procesos que se pueden usar los que representan a los pacientes y al médico, se debe asegurar de que nunca haya más de un paciente en el consultorio, no se puede usar el ID del proceso como turno.
 
