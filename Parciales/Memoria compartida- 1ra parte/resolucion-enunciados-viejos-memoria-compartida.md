@@ -89,6 +89,54 @@ process Micro{
 ```
 
  3. En una competencia culinaria se juntan 1 jurado y C concursantes. Una vez que todos los concursantes llegaron, el jurado les asigna la receta que deben realizar. A continuación, los concursantes cocinan el plato pedido (a cada uno le lleva un tiempo variable) y lo exhiben ante el jurado en el orden en que van terminando. El jurado asigna un puntaje a cada concursante, el cual lo guarda para su CV.
+    *Solución propia:*
+```
+sem sem_llegada= 1; int cant= 0; sem sem_aviso_profesor= 0;
+sem sem_receta[C]= ([C]0); sem sem_correccion[C]= ([C]0);
+sem sem_entregas= 1; sem sem_avisaEntrega= 0; queue colaP;
+text recetas[C], puntajes[C];
+
+process Concursante[i=1..C]{
+    text receta, plato;
+    int puntaje;
+
+    P(sem_llegada);
+    cant++;
+    if (cant == C){
+        V(sem_aviso_profesor);
+    }
+    V(sem_llegada);
+    P(sem_receta[i]);
+    receta= recetas[i];
+    plato= cocinar(receta);
+    P(sem_entregas);
+    push(colaP, (i, plato));
+    V(sem_entregas);
+    V(sem_avisaEntrega);
+    P(sem_correccion[i]);
+    puntaje= puntajes[i];
+}
+
+process Jurado{
+    int idC; text plato, puntaje;
+
+    P(sem_aviso_profesor);
+    for i=1..C{
+        recetas[i]= generarReceta();
+        V(sem_receta[i]);
+    }
+
+    for i=1..C{
+        P(sem_avisaEntrega);
+        P(sem_entregas);
+        pop(colaP, (idC, plato));
+        V(sem_entregas);
+        puntaje= corregir(plato);
+        puntajes[idC]= puntaje;
+        V(sem_correccion[idC]);
+    }
+}
+```
 
  4. En un examen final hay P alumnos y 3 profesores. Cuando todos los alumnos y los profesores han llegado comienza el examen. Para esto uno de los profesores (el primero en llegar) le da el examen a cada alumno. Cada alumno resuelve su examen, lo entrega y espera que alguno de los profesores lo corrija y le indique la nota. Los profesores corrigen los examenes respetando el orden en que los alumnos van entregando.
 
