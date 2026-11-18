@@ -292,6 +292,51 @@ process Medico{
 ```
 
  7. Se debe simular el uso de UNA máquina expendedora de agua con capacidad para 20 botellas por parte de U usuarios, además existe un repositorio encargado de reponer las botellas de máquina. Cuando un usuario llega a la máquina expendedora, espera su turno (representando el orden de llegada), saca una botella y se retira. Si encuentra la máquina sin botellas, le avisa al repositorio para que cargue nuevamente la máquina con 20 botellas. Espera a que se haga la recarga saca una botella y se retira.
+    *Solución propia:*
+```
+sem mutexFila= 1; sem espera[U]= ([U]0); sem avisarRepositor= 0; sem avisarDisponible= 0;
+queue filaE; int botellas= 20; boolean libre= true;
+
+process Usuario[i=1..U]{
+    Botella botella;
+    int aux;
+
+    P(mutexFila);
+    if (libre){
+        libre= false;
+        V(mutexFila);
+    }
+    else {
+        push(filaE, i);
+        V(mutexFila);
+        P(espera[i]);
+    }
+    if (botellas == 0){
+        V(avisarRepositor);
+        P(avisarDisponible);
+    }
+    botella= tomarBotella();
+    botellas--;
+    P(mutexFila);
+    if (not empty(filaE)){
+        pop(filaE, aux);
+        V(espera[aux]);
+    }
+    else {
+        libre= true;
+    }
+    V(mutexFila);
+}
+
+process Repositor{
+    while(true){
+        P(avisarRepositor);
+        delay(reposicion);
+        botellas= 20;
+        V(avisarDisponible);
+    }
+}
+```
 
  8. Se tiene un vector A de 1.000.000 de números del cual se debe obtener el promedio de sus valores utilizando 10 procesos Worker. Al terminar todos los procesos deben imprimir el resultado. Maximizar concurrencia, únicamente se pueden usar los 10 procesos worker.
 
