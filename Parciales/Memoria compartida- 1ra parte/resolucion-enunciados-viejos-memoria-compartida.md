@@ -57,6 +57,36 @@ process Estacion[i=1..7]{
 ```
 
  2. Una empresa de turismo posee un micro con capacidad para 50 personas. Hay un único vendedor que atiende a los C clientes (C > 50) que intentan comprar un pasaje de acuerdo al orden de llegada (suponga que la atención de un cliente tarda un par de minutos), si aún hay lugares disponibles, le indica el número de asiento que le tocó. Cada cliente, luego de ser atendidos por el vendedor, se dirige al micro para subir en caso de que le hayan dado un asiento. El micro espera a que los 50 pasajeros hayan subido para realizar el viaje.
+    *Solución propia:*
+```
+process Cliente[i=1..C]{
+    int nroTicket;
+
+    P(sem_entrada);
+    push(colaEspera, i);
+    V(sem_entrada);
+    V(sem_atencion);
+    P(sem_asignacion[i]);
+    nroTicket= tickets[i];
+    if (nroTicket != -1){
+        P(sem_llegada_micro);
+        total++;
+        if (total == 50){
+            V(sem_micro);
+        }
+        V(sem_llegada_micro);
+        P(sem_fin_viaje[nroTicket]);
+    }
+}
+
+process Micro{
+    P(sem_micro);
+    delay(viajeMicro);
+    for i=1..50{
+        V(sem_fin_viaje[i]);
+    }
+}
+```
 
  3. En una competencia culinaria se juntan 1 jurado y C concursantes. Una vez que todos los concursantes llegaron, el jurado les asigna la receta que deben realizar. A continuación, los concursantes cocinan el plato pedido (a cada uno le lleva un tiempo variable) y lo exhiben ante el jurado en el orden en que van terminando. El jurado asigna un puntaje a cada concursante, el cual lo guarda para su CV.
 
