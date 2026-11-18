@@ -372,8 +372,68 @@ process Worker[i=1..10]{
 ```
 
  9. A una acopiadora de cereales llegan 20 camiones que deben descargar su cereal. Los camiones se descargan de a uno por vez, y de acuerdo con orden de llegada. Una vez que el camión llegó, espera a que llegue su turno para comenzar a descargar. Sólo se pueden usar procesos que representen a los camiones; cada camión descarga una sola vez; la descarga del camión se simula por medio de la función DESCARGAR() llamada por el camión.
+    *Solución propia:*
+```
+boolean libre= true; sem mutexFila= 1; queue colaE; sem espera[20]= ([20]0);
+
+process Camion[i=1..20]{
+    int aux;
+
+    P(mutexFila);
+    if (libre){
+        libre= false;
+        V(mutexFila);
+    }
+    else{
+        push(colaE, i);
+        V(mutexFila);
+        P(espera[i]);
+    }
+
+    Descargar();
+    P(mutexFila);
+    if (not empty(colaE)){
+        pop(colaE, aux);
+        V(espera[aux]);
+    }
+    else{
+        libre= true;
+    }
+    V(mutexFila);
+}
+```
 
  10. Existen B barcos areneros que deben descargar su contenido en una playa. Los barcos se descargan de a uno por vez, y de acuerdo con orden de llegada. Una vez que el barco llegó, espera a que le llegue su turno para comenzar a descargar su contenido, y luego se retira. Sólo se pueden usar los procesos que representen a los barcos, cada barco descarga sólo una vez; suponga que existe la función DESCARGAR() que simula que el barco está descargando contenido en la playa.
+    *Solución propia:*
+```
+boolean libre= true; sem mutexFila= 1; queue colaE; sem espera[20]= ([20]0);
+
+process Barco[i=1..20]{
+    int aux;
+
+    P(mutexFila);
+    if (libre){
+        libre= false;
+        V(mutexFila);
+    }
+    else{
+        push(colaE, i);
+        V(mutexFila);
+        P(espera[i]);
+    }
+
+    Descargar();
+    P(mutexFila);
+    if (not empty(colaE)){
+        pop(colaE, aux);
+        V(espera[aux]);
+    }
+    else{
+        libre= true;
+    }
+    V(mutexFila);
+}
+```
 
  11. En un laboratorio de genérica trabajan 20 empleados que deben usar un pirosecuenciador de a uno a la vez, de acuerdo con el orden de llegada. Sólo se pueden usar los procesos que representen a los empleados, cada empleado usa sólo una vez el pirosecuenciador, suponga que existe la función USAR() que simula el uso de este instrumento por parte del empleado.
 
