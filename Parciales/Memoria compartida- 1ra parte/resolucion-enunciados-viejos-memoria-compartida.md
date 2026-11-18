@@ -265,6 +265,31 @@ process Verificador{
 ```
 
  6. En una clínica hay un médico que debe atender a 20 personas de acuerdo al turno de cada uno de ellos (no puede atender al paciente con turno i+1 si no atendió al que tiene el turno i). Cada paciente ya conoce su turno al comenzar (valor entre 0 y 19 entre 1 y 20). Al llegar espera hasta que le médico lo llame para ser atendido, se dirige al consultorio y luego espera hasta que el médico que lo termine de atender para poder retirarse. Nota: los únicos procesos que se pueden usar los que representan a los pacientes y al médico, se debe asegurar de que nunca haya más de un paciente en el consultorio, no se puede usar el ID del proceso como turno.
+    *Solución propia:*
+```
+sem avisarLlegada[20]= ([20]0); sem ingresarConsultorio[20]= ([20]0);
+sem salirConsultorio[20]= ([20]0); sem avisarSalida[20]= ([20]0);
+
+process Persona[i=1..20]{
+    int turno;
+
+    turno= obtenerMiTurno();
+    V(avisarLlegada[turno]);
+    P(ingresarConsultorio[turno]);
+    P(salirConsultorio[turno]);
+    V(avisarSalida[turno]);
+}
+
+process Medico{
+    for i=1..20{
+        P(avisarLlegada[i]);
+        V(ingresarConsultorio[i]);
+        delay(atencionMedica);
+        V(salirConsultorio[i]);
+        P(avisarSalida[i]);
+    }
+}
+```
 
  7. Se debe simular el uso de UNA máquina expendedora de agua con capacidad para 20 botellas por parte de U usuarios, además existe un repositorio encargado de reponer las botellas de máquina. Cuando un usuario llega a la máquina expendedora, espera su turno (representando el orden de llegada), saca una botella y se retira. Si encuentra la máquina sin botellas, le avisa al repositorio para que cargue nuevamente la máquina con 20 botellas. Espera a que se haga la recarga saca una botella y se retira.
 
