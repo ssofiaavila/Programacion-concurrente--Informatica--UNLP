@@ -436,6 +436,37 @@ process Barco[i=1..20]{
 ```
 
  11. En un laboratorio de genérica trabajan 20 empleados que deben usar un pirosecuenciador de a uno a la vez, de acuerdo con el orden de llegada. Sólo se pueden usar los procesos que representen a los empleados, cada empleado usa sólo una vez el pirosecuenciador, suponga que existe la función USAR() que simula el uso de este instrumento por parte del empleado.
+    *Solución propia:*
+```
+sem mutexFila= 1; queue colaE; sem espera[20]= ([20]0);
+boolean libre= true;
+
+process Empleado[i=1..20]{
+    int aux;
+
+    P(mutexFila);
+    if (not libre){
+        push(colaE, i);
+        V(mutexFila);
+        P(espera[i]);
+    }
+    else{
+        libre= false;
+        V(mutexFila);
+    }
+
+    Usar();
+    P(mutexFila);
+    if (not empty(colaE)){
+        pop(colaE, aux);
+        V(espera[aux]);
+    }
+    else{
+        libre= true;
+    }
+    V(mutexFila);
+}
+```
 
  12. Se debe simular el uso de un sistema virtual de venta de entradas para un evento musical. El sistema cuenta con C cajeros virtuales que atienden indefinidamente. Sin embargo, como la venta de entradas comienza a una hora determinada, sólo atienden a partir del aviso de un timer. Una vez que reciben dicho aviso, los cajeros atienden de acuerdo con el orden de llegada de los compradores. La atención consiste en recibir la solicitud del comprador (datos para el pago) y responderle si puedo comprar junto al comprobante de la operación. Para este evento se cuenta con E entradas y N compradores, donde cada comprador puede solicitar a lo sumo una entrada.
     *Solución:* `Parciales/Soluciones años anteriores/PConcu-2024---Soluciones-parcial-MC1-versiona2.pdf` (parcial MC1 7-10-24, ej. 1, págs. 1-2)
