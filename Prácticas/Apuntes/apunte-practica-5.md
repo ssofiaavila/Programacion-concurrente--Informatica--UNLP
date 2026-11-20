@@ -1139,3 +1139,119 @@ while (not atendida) loop
    end select;
 end loop;
 ```
+
+---
+
+# Patrones nuevos que surgieron en los parciales viejos (ADA)
+
+## M. Lectores / escritores y recursos con capacidad (Parcial Ej. 3 puente, Ej. 12 base de datos)
+**Idea:** si **varios** pueden usar el recurso a la vez, el uso **no** puede ir dentro de un `accept` (lo serializa). Se separa en **entrar / salir** con un contador en la tarea dueña del recurso, y el uso va **entre** las dos llamadas, fuera del rendezvous.
+```ada
+task body BD is
+   cantLectores: integer := 0;
+begin
+   loop
+      select
+         when (cantLectores = 0) =>                   -- escritor exclusivo
+            accept Escribir (d: IN texto) do escribirDato(d); end Escribir;
+      or
+         when (Escribir'count = 0) =>                 -- prioridad a escritores
+            accept InicioLectura;
+            cantLectores := cantLectores + 1;
+      or
+         accept FinLectura;                           -- la salida nunca lleva when
+         cantLectores := cantLectores - 1;
+      end select;
+   end loop;
+end BD;
+
+-- Lector:
+BD.InicioLectura;
+leer();                 -- varios lectores en paralelo
+BD.FinLectura;
+```
+- **Puente con capacidad 100:** mismo esquema, con `when (cant < 100)` en las entradas (un entry por tipo si hay prioridad: `EntrarJubilado`, `EntrarComun`).
+- El que escribe/usa en exclusiva sí puede hacerlo **dentro** del accept: así nadie más entra mientras tanto.
+
+## N. Coordinador que reparte llamando (variante del patrón I) (Parcial Ej. 14 sedes, Ej. 18 sucursales)
+**Idea:** cuando el enunciado dice "la central **envía** el dato a cada sede", el coordinador llama a cada worker. Para no perder concurrencia, el `accept` del worker **solo copia el dato**, y el resultado vuelve en una **llamada aparte**.
+```ada
+-- Worker (Sede):
+loop
+   accept Recibir (m: IN integer) do modelo := m; end Recibir;   -- rendezvous corto
+   cant := calcular(modelo);                                      -- en paralelo
+   Central.Resultado(cant);
+end loop;
+
+-- Central (un ciclo):
+total := 0;                                   -- ¡reiniciar en cada ciclo!
+for i in 1..S loop sedes(i).Recibir(modelo); end loop;
+for i in 1..S loop
+   accept Resultado (c: IN integer) do total := total + c; end Resultado;
+end loop;
+informar(modelo, total);
+```
+- **Trampa:** devolver el resultado como `OUT` en el mismo `Recibir` (o calcular dentro del accept) obliga a la Central a esperar a cada sede: queda secuencial.
+- Da igual quién llama (worker pide con `OUT` = patrón I, o central envía = patrón N): lo que importa es que el cálculo quede **fuera** del rendezvous.
+
+## O. Asignar número/grupo por orden de llegada + barrera con retención (Parcial Ej. 17, paddle)
+**Idea:** el que asigna responde **en el mismo rendezvous** (`OUT`) y usa el contador del `for` para calcular el número; no hace falta cola ni ids. La espera del grupo y la actividad las maneja **una tarea por grupo** (cancha), que retiene a los integrantes hasta que termina.
+```ada
+-- Encargado:
+for i in 1..40 loop
+   accept PedirCancha (nro: OUT integer) do nro := (i - 1) / 4 + 1; end PedirCancha;
+end loop;
+
+-- Cancha (una por grupo):
+for j in 1..4 loop accept Llegar; end loop;      -- barrera
+delay 3600.0;                                     -- la actividad
+for j in 1..4 loop accept Terminar; end loop;    -- se van todos juntos
+
+-- Persona:
+Encargado.PedirCancha(nro);
+canchas(nro).Llegar;
+canchas(nro).Terminar;                            -- bloqueada hasta que termina el partido
+```
+
+## P. Reintentar hasta ser **atendido** (no hasta tener éxito) (Parcial Ej. 12 escritores, Ej. 16 entradas)
+**Idea:** si el servidor puede responder "no" (se agotaron las entradas), el loop de reintentos tiene que cortar cuando **lo atendieron**, no cuando consiguió lo que quería. Si no, reintenta para siempre. Lo más simple es un `exit` dentro de la rama del `select`:
+```ada
+loop
+   select
+      Servidor.Comprar(dinero, ok);
+      exit;                      -- me atendieron (ok puede ser true o false)
+   else                          -- impaciente: "si no lo atienden inmediatamente"
+      delay 10.0;                -- (paciente: or delay 300.0; null;)
+   end select;
+end loop;
+```
+
+## Q. Consulta periódica con timeout por servidor (Parcial Ej. 13, Banco Central)
+**Idea:** patrón D dentro de un `for`, de a un servidor por vez, todo dentro de un `loop` porque es periódico. Los servidores (APIs) también atienden en `loop`.
+```ada
+loop
+   for i in 1..20 loop
+      select
+         bancos(i).Cotizacion(compra(i), venta(i));
+         vacio(i) := false;
+      or delay 5.0;
+         vacio(i) := true;
+      end select;
+   end loop;
+   actualizarPagina(compra, venta, vacio);
+end loop;
+```
+
+## Checklist de errores de ADA vistos en los parciales
+- [ ] **Parámetro y variable local con el mismo nombre:** `accept X(dato: IN t) do dato := dato;` no guarda nada. Renombrar el parámetro (`d`) y hacer `dato := d;`.
+- [ ] **`IN OUT`** con espacio, no `IN/OUT`.
+- [ ] **Entry sin parámetros, sin paréntesis:** `entry Llegada;`, `T.Llegada;`, `accept Llegada;`.
+- [ ] **El `accept` repite exactamente** los nombres y tipos de los parámetros de la `entry`.
+- [ ] **Arreglo de tareas ⇒ `task type`**, no `task`. Y `array(1..N) of Tipo` (con `of`, no `is`).
+- [ ] **`procedure` … `is`**, no `process` ni `{`. Asignación con `:=`. `if … then … elsif … else … end if;`.
+- [ ] **Strings con comillas dobles** (`"anciano"`); con simples es un carácter.
+- [ ] **Inicializar** las variables que se mandan (`dinero := obtenerDinero();`) y **reiniciar acumuladores** en cada ciclo (`total := 0;`).
+- [ ] **"Todas las tareas deben finalizar"** ⇒ el servidor con `for i in 1..N loop` en vez de `loop` infinito.
+- [ ] **"Menos de X"** es `< X`, no `<= X`.
+- [ ] Tiempos: 5 min = `delay 300.0`, 10 min = `600.0`, 30 min = `1800.0`, 60 min = `3600.0`.
+- [ ] ¿El trabajo pesado está fuera del rendezvous cuando hay que maximizar la concurrencia?

@@ -1190,35 +1190,852 @@
 ```
 
  3. Se quiere modelar un puente colgante de un solo sentido, el cual resiste hasta 100 personas. Suponga que hay una cantidad innumerable de personas que quieren cruzar y que solo lo podrían hacer si no superan la cantidad máxima. Las personas cruzan el puente de acuerdo al orden de llegada, aunque los jubilados tienen prioridad sobre los no jubilados. 
+```ada
+    procedure PuenteColgante is
+
+        task Puente is
+            entry entrarJubilado;
+            entry entrarComun;
+            entry salir;
+        end Puente;
+
+        task type Persona;
+        personas: array(1..N) of Persona;      -- "innumerables": N arbitrariamente grande
+
+        task body Persona is
+            jubilado: boolean;
+        begin
+            jubilado := esJubilado();
+            if jubilado then
+                Puente.entrarJubilado;
+            else
+                Puente.entrarComun;
+            end if;
+            cruzar();                           -- fuera del rendezvous: cruzan varios a la vez
+            Puente.salir;
+        end Persona;
+
+        task body Puente is
+            cant: integer := 0;                 -- personas sobre el puente
+        begin
+            loop
+                select
+                    when (cant < 100) =>
+                        accept entrarJubilado;
+                        cant := cant + 1;
+                or
+                    when (cant < 100 and entrarJubilado'count = 0) =>
+                        accept entrarComun;
+                        cant := cant + 1;
+                or
+                    accept salir;
+                    cant := cant - 1;
+                end select;
+            end loop;
+        end Puente;
+
+    begin
+        null;
+    end PuenteColgante;
+```
+> - El puente lleva la cuenta de cuántos hay arriba: solo deja entrar si `cant < 100`; `salir` siempre se acepta (si no, se trabaría con el puente lleno).
+> - Prioridad: los comunes entran solo si no hay jubilados esperando (`entrarJubilado'count = 0`). Dentro de cada grupo, orden de llegada (cola FIFO de cada entry).
+> - El cruce se hace **entre** `entrar` y `salir`, fuera del rendezvous, para que puedan cruzar hasta 100 al mismo tiempo (mismo patrón que lectores en el ejercicio 12).
+> - Las entries sin parámetros van sin paréntesis y su `accept` sin `do ... end`.
 
  4. En una competencia de programadores hay P participantes y UN coordinador. El coordinador entrega el problema a resolver a los participantes y recibe las resoluciones para corregir. Cada participante debe conocer el resultado de su trabajo y el orden en que entregó su resolución Nota: Maximizar la concurrencia. 
+```ada
+    procedure Competencia is
+
+        task type Participante is
+            entry entregarEnunciado(e: IN text);
+        end Participante;
+
+        task Coordinador is
+            entry entregarExamen(examen: IN text; nota, orden: OUT integer);
+        end Coordinador;
+
+        participantes: array(1..P) of Participante;
+
+        task body Participante is
+            enunciado, examen: text;
+            nota, orden: integer;
+        begin
+            accept entregarEnunciado(e: IN text) do
+                enunciado := e;
+            end entregarEnunciado;
+            examen := resolverEnunciado(enunciado);
+            Coordinador.entregarExamen(examen, nota, orden);
+        end Participante;
+
+        task body Coordinador is
+            enunciado: text;
+        begin
+            enunciado := generarEnunciado();
+            for i in 1..P loop
+                participantes(i).entregarEnunciado(enunciado);
+            end loop;
+            for i in 1..P loop
+                accept entregarExamen(examen: IN text; nota, orden: OUT integer) do
+                    orden := i;
+                    nota := corregirExamen(examen);
+                end entregarExamen;
+            end loop;
+        end Coordinador;
+
+    begin
+        null;
+    end Competencia;
+```
+> - El orden de entrega sale del contador `i` del `for`: la cola de la entry `entregarExamen` es FIFO, así que el i-ésimo aceptado es el i-ésimo en entregar.
+> - Corregir dentro del `accept` no resta concurrencia: hay un solo coordinador (corrige de a uno igual) y el participante no tiene nada más que hacer que esperar su nota.
+> - Ojo con los nombres: el parámetro de la entry no puede llamarse igual que la variable local (`e` vs `enunciado`).
 
  5. En un negocio de cobros digitales hay P personas que debn pasar por la única caja de cobros para realizar el pago de sus boletas. Las personas son atendidas de acuerdo con el orden de llegada, teniendo prioridad aquellos que deben pagar menos de 5 boletas de los que pagan más. Adicionalmente, las personas embarazadas y los ancianos tienen prioridad sobre los dos casos anteriores. Las personas entregan sus boletas al cajero y el dinero de pago; el cajero les devuelve el vuelto y los recibos de pago. 
+```ada
+    procedure CobroBoletas is
+
+        task Caja is
+            entry filaPrioridad(boletas: IN text; dinero: IN OUT integer; recibos: OUT text);
+            entry filaMenos5(boletas: IN text; dinero: IN OUT integer; recibos: OUT text);
+            entry filaComun(boletas: IN text; dinero: IN OUT integer; recibos: OUT text);
+        end Caja;
+
+        task type Persona;
+        personas: array(1..P) of Persona;
+
+        task body Persona is
+            boletas, recibos: text;
+            dinero, cantBoletas: integer;
+            tienePrioridad: boolean;
+        begin
+            boletas := obtenerBoletas();
+            dinero := obtenerDinero();
+            tienePrioridad := esEmbarazadaOAnciano();
+            cantBoletas := cant(boletas);
+            if tienePrioridad then
+                Caja.filaPrioridad(boletas, dinero, recibos);
+            elsif cantBoletas < 5 then
+                Caja.filaMenos5(boletas, dinero, recibos);
+            else
+                Caja.filaComun(boletas, dinero, recibos);
+            end if;
+        end Persona;
+
+        task body Caja is
+        begin
+            loop
+                select
+                    accept filaPrioridad(boletas: IN text; dinero: IN OUT integer; recibos: OUT text) do
+                        dinero := cobrar(boletas, dinero);      -- devuelve el vuelto
+                        recibos := generarRecibos(boletas);
+                    end filaPrioridad;
+                or
+                    when (filaPrioridad'count = 0) =>
+                        accept filaMenos5(boletas: IN text; dinero: IN OUT integer; recibos: OUT text) do
+                            dinero := cobrar(boletas, dinero);
+                            recibos := generarRecibos(boletas);
+                        end filaMenos5;
+                or
+                    when (filaPrioridad'count = 0 and filaMenos5'count = 0) =>
+                        accept filaComun(boletas: IN text; dinero: IN OUT integer; recibos: OUT text) do
+                            dinero := cobrar(boletas, dinero);
+                            recibos := generarRecibos(boletas);
+                        end filaComun;
+                end select;
+            end loop;
+        end Caja;
+
+    begin
+        null;
+    end CobroBoletas;
+```
+> - Una entry por nivel de prioridad: cada cola de entry es FIFO, así que dentro de cada nivel se respeta el orden de llegada.
+> - Las guardas con `'count` dan la prioridad: embarazadas/ancianos > menos de 5 boletas > resto.
+> - "Menos de 5" es `< 5`, no `<= 5`. En Ada el modo es `IN OUT` (sin barra).
 
  6.  Se debe modelar la atención en un banco por medio de un único empleado. Los clientes llegan y esperan a lo sumo 10 minutos a ser atendido de acuerdo al orden de llegada. Pasado ese tiempo se retira sin ser atendido.
+```ada
+    procedure Banco is
+
+        task Empleado is
+            entry atencion(respuesta: OUT text);
+        end Empleado;
+
+        task type Cliente;
+        clientes: array(1..N) of Cliente;
+
+        task body Cliente is
+            rta: text;
+        begin
+            select
+                Empleado.atencion(rta);
+            or delay 600.0;          -- 10 minutos
+                null;                -- se retira sin ser atendido
+            end select;
+        end Cliente;
+
+        task body Empleado is
+        begin
+            loop
+                accept atencion(respuesta: OUT text) do
+                    respuesta := atenderCliente();
+                end atencion;
+            end loop;
+        end Empleado;
+
+    begin
+        null;
+    end Banco;
+```
+> - Llamada temporizada (`select ... or delay`): si en 10 minutos el empleado no **empezó** a atenderlo, se cancela la llamada y el cliente se va. Si ya empezó el rendezvous, espera a que termine.
+> - La cola de la entry es FIFO → orden de llegada.
+> - El tipo de la variable que se pasa tiene que coincidir con el del parámetro (`rta: text` ↔ `respuesta: OUT text`).
 
  7. Hay E estudiantes que rinden un examen final y un profesor que cuando todos los estudiantes han llegado les entrega el enunciado, luego el profesor va corrigiendo los exámenes y enviando la nota con orden en que se van entregando. Cada alumno realiza el examen, lo entrega y espera a que el profesor le indique la nota. Nota: Maximizar la concurrencia, no realizar busy waiting, todos los procesos deben terminar. 
+```ada
+    procedure ExamenFinal is
+
+        task type Alumno is
+            entry recibirEnunciado(e: IN text);
+        end Alumno;
+
+        task Profesor is
+            entry llegada;
+            entry correccion(examen: IN text; nota: OUT integer);
+        end Profesor;
+
+        alumnos: array(1..E) of Alumno;
+
+        task body Alumno is
+            enunciado, examen: text;
+            nota: integer;
+        begin
+            Profesor.llegada;
+            accept recibirEnunciado(e: IN text) do
+                enunciado := e;
+            end recibirEnunciado;
+            examen := resolver(enunciado);
+            Profesor.correccion(examen, nota);
+        end Alumno;
+
+        task body Profesor is
+            enunciado: text;
+        begin
+            for i in 1..E loop
+                accept llegada;
+            end loop;
+            enunciado := generarEnunciado();
+            for i in 1..E loop
+                alumnos(i).recibirEnunciado(enunciado);
+            end loop;
+            for i in 1..E loop
+                accept correccion(examen: IN text; nota: OUT integer) do
+                    nota := corregir(examen);
+                end correccion;
+            end loop;
+        end Profesor;
+
+    begin
+        null;
+    end ExamenFinal;
+```
+> - El primer `for` es la barrera: el profesor no reparte el enunciado hasta recibir las E llegadas.
+> - Entry sin parámetros: se declara `entry llegada;`, se llama `Profesor.llegada;` y se acepta `accept llegada;` (sin paréntesis ni `do null; end`).
+> - Las correcciones salen en el orden de entrega porque la cola de `correccion` es FIFO. Todas las tareas terminan: los `for` tienen exactamente E vueltas.
 
  8. En la farmacia de un hospital hay una única ventanilla para dispensar medicamentos. Los P pacientes internados deben retirar sus medicamentos presentando una receta (un único retiro por persona). Los pacientes son atendidos en el orden de llegada, pero con prioridad de atención: los pacientes de urgencia tienen prioridad sobre los de internación general, y ambos tienen prioridad sobre los pacientes ambulatorios. Cada paciente entrega su receta y recibe la medicación correspondiente. Notas: la función obtenerPrioridad() le permite al paciente conocer su prioridad (retorna 0 si el paciente es de urgencia, 1 si es internado general, o 2 si es ambulatorio). La función obtenerReceta() retorna la receta para el paciente que la invoca mientras que dispensarMedicamento(receta) le retorna al empleado el medicamento para la receta indicada. El empleado atiende de a un paciente por vez, según la prioridad indicada. Todas las tareas deben finalizar. 
+```ada
+    procedure Farmacia is
+
+        task Empleado is
+            entry filaUrgencia(receta: IN text; medicamento: OUT text);
+            entry filaInternado(receta: IN text; medicamento: OUT text);
+            entry filaAmbulatorio(receta: IN text; medicamento: OUT text);
+        end Empleado;
+
+        task type Paciente;
+        pacientes: array(1..P) of Paciente;
+
+        task body Paciente is
+            prioridad: integer;
+            receta, medicamento: text;
+        begin
+            prioridad := obtenerPrioridad();
+            receta := obtenerReceta();
+            if prioridad = 0 then
+                Empleado.filaUrgencia(receta, medicamento);
+            elsif prioridad = 1 then
+                Empleado.filaInternado(receta, medicamento);
+            else
+                Empleado.filaAmbulatorio(receta, medicamento);
+            end if;
+        end Paciente;
+
+        task body Empleado is
+        begin
+            for i in 1..P loop          -- atiende exactamente P pacientes y termina
+                select
+                    accept filaUrgencia(receta: IN text; medicamento: OUT text) do
+                        medicamento := dispensarMedicamento(receta);
+                    end filaUrgencia;
+                or
+                    when (filaUrgencia'count = 0) =>
+                        accept filaInternado(receta: IN text; medicamento: OUT text) do
+                            medicamento := dispensarMedicamento(receta);
+                        end filaInternado;
+                or
+                    when (filaUrgencia'count = 0 and filaInternado'count = 0) =>
+                        accept filaAmbulatorio(receta: IN text; medicamento: OUT text) do
+                            medicamento := dispensarMedicamento(receta);
+                        end filaAmbulatorio;
+                end select;
+            end loop;
+        end Empleado;
+
+    begin
+        null;
+    end Farmacia;
+```
+> - "Todas las tareas deben finalizar": como cada paciente retira una sola vez, el empleado hace un `for` de P vueltas en vez de `loop` infinito.
+> - Prioridad con guardas `'count`: urgencia > internación general > ambulatorio; dentro de cada fila, orden de llegada (cola FIFO de la entry).
 
  9.  Hay un sitio web para identificación genética que resuelve pedidos de N clientes. Cada cliente trabaja continuamente de la siguiente manera: genera la secuencia de ADN, la envía al sitio web para evaluar y espera el resultado; después de esto puede comenzar a generar la siguiente secuencia de ADN. Para resolver estos pedidos el sitio web cuenta con 5 servidores idénticos que atienden los pedidos de acuerdo al orden de llegada (cada pedido es atendido por un único servicio). Nota: maximizar la concurrencia. Suponga que los servidores tienen una función ResolverAnalisis que recibe la secuencia de ADN y devuelve un entero con el resultado.
+```ada
+    procedure SitioGenetico is
+
+        task type Cliente is
+            entry identificar(id: IN integer);
+            entry resultado(r: IN integer);
+        end Cliente;
+
+        task Admin is
+            entry pedido(idC: IN integer; sec: IN text);
+            entry siguiente(idC: OUT integer; sec: OUT text);
+        end Admin;
+
+        task type Servidor;
+
+        clientes: array(1..N) of Cliente;
+        servidores: array(1..5) of Servidor;
+
+        task body Cliente is
+            miId, res: integer;
+            sec: text;
+        begin
+            accept identificar(id: IN integer) do
+                miId := id;
+            end identificar;
+            loop
+                sec := generarSecuencia();
+                Admin.pedido(miId, sec);
+                accept resultado(r: IN integer) do
+                    res := r;
+                end resultado;
+            end loop;
+        end Cliente;
+
+        task body Admin is
+            cola: queue;
+        begin
+            loop
+                select
+                    accept pedido(idC: IN integer; sec: IN text) do
+                        push(cola, (idC, sec));
+                    end pedido;
+                or
+                    when not empty(cola) =>
+                        accept siguiente(idC: OUT integer; sec: OUT text) do
+                            pop(cola, (idC, sec));
+                        end siguiente;
+                end select;
+            end loop;
+        end Admin;
+
+        task body Servidor is
+            idC, res: integer;
+            sec: text;
+        begin
+            loop
+                Admin.siguiente(idC, sec);
+                res := ResolverAnalisis(sec);   -- fuera del rendezvous: los 5 trabajan en paralelo
+                clientes(idC).resultado(res);
+            end loop;
+        end Servidor;
+
+    begin
+        for i in 1..N loop
+            clientes(i).identificar(i);
+        end loop;
+    end SitioGenetico;
+```
+> - El Admin con cola garantiza el orden de llegada; sus `accept` solo encolan/desencolan (rendezvous cortos).
+> - `ResolverAnalisis` se ejecuta fuera de cualquier rendezvous → los 5 servidores trabajan en paralelo (maximiza la concurrencia).
+> - El servidor responde directo al cliente con `clientes(idC).resultado`; el cliente conoce su id porque se lo pasa el programa principal con `identificar`.
 
  10. En un negocio hay un empleado para atender los pedidos de clientes de N clientes; algunos clientes son ancianos o embarazadas. El empleado atiende los pedidos de acuerdo a la siguiente prioridad: primero las embarazadas, luego los ancianos, y por último el resto. Cada cliente hace sólo un pedido de la siguiente manera: en el caso de las embarazadas, si no son atendidas inmediatamente se retiran; en el caso de los ancianos, esperan a los sumo 5 minutos a ser atendidos, y si no se retira; cualquier otro cliente espera sí o sí hasta ser atendido. El empleado atiende a los clientes de acuerdo al orden de llegada pero manteniendo las siguientes prioridades: primero las embarazadas, luego los ancianos y luego el resto. Nota: suponga que existe una función AtenderPedido() que simula que el empleado está atendiendo a un cliente.
+```ada
+    procedure Negocio is
+
+        task Empleado is
+            entry filaEmbarazadas;
+            entry filaAncianos;
+            entry filaComun;
+        end Empleado;
+
+        task type Cliente;
+        clientes: array(1..N) of Cliente;
+
+        task body Cliente is
+            tipo: text;
+        begin
+            tipo := obtenerTipo();
+            if tipo = "embarazada" then
+                select                          -- llamada condicional: si no la atienden ya, se va
+                    Empleado.filaEmbarazadas;
+                else
+                    null;
+                end select;
+            elsif tipo = "anciano" then
+                select                          -- llamada temporizada: espera a lo sumo 5 minutos
+                    Empleado.filaAncianos;
+                or delay 300.0;
+                    null;
+                end select;
+            else
+                Empleado.filaComun;             -- espera sí o sí
+            end if;
+        end Cliente;
+
+        task body Empleado is
+        begin
+            loop
+                select
+                    accept filaEmbarazadas do
+                        AtenderPedido();
+                    end filaEmbarazadas;
+                or
+                    when (filaEmbarazadas'count = 0) =>
+                        accept filaAncianos do
+                            AtenderPedido();
+                        end filaAncianos;
+                or
+                    when (filaEmbarazadas'count = 0 and filaAncianos'count = 0) =>
+                        accept filaComun do
+                            AtenderPedido();
+                        end filaComun;
+                end select;
+            end loop;
+        end Empleado;
+
+    begin
+        null;
+    end Negocio;
+```
+> - Embarazadas: **llamada condicional** (`select ... else`): solo se concreta si el empleado puede aceptarla en ese instante.
+> - Ancianos: **llamada temporizada** (`select ... or delay 300.0`): 5 minutos = 300 segundos.
+> - Resto: llamada común, espera hasta ser atendido.
+> - `AtenderPedido()` va dentro del `accept` porque el cliente tiene que quedar retenido mientras lo atienden.
 
  11. Se quiere modelar el funcionamiento de un banco, al cual llegan clientes que deben realizar un pago y llevarse su comprobante. Los clientes se dividen entre los regulares y los premium, habiendo R clientes regulares y P clientes premium. Existe un único empleado en el banco, el cual atiende de acuerdo al orden de llegada, pero dando prioridad a los premium sobre los regulares. Si a los 30 minutos de llegar un cliente regular no fue atendido, entonces se retira sin realizar el pago. Los clientes premium siempre esperan hasta ser atendidos.
+```ada
+    procedure Banco is
+
+        task Empleado is
+            entry filaRegular(boleta: IN text; dinero: IN OUT integer; comprobante: OUT text);
+            entry filaPremium(boleta: IN text; dinero: IN OUT integer; comprobante: OUT text);
+        end Empleado;
+
+        task type ClienteRegular;
+        task type ClientePremium;
+        clientesR: array(1..R) of ClienteRegular;
+        clientesP: array(1..P) of ClientePremium;
+
+        task body ClienteRegular is
+            boleta, comprobante: text;
+            dinero: integer;
+        begin
+            boleta := generarBoleta();
+            dinero := obtenerDinero();
+            select
+                Empleado.filaRegular(boleta, dinero, comprobante);
+            or delay 1800.0;            -- 30 minutos
+                null;                   -- se retira sin pagar
+            end select;
+        end ClienteRegular;
+
+        task body ClientePremium is
+            boleta, comprobante: text;
+            dinero: integer;
+        begin
+            boleta := generarBoleta();
+            dinero := obtenerDinero();
+            Empleado.filaPremium(boleta, dinero, comprobante);   -- espera siempre
+        end ClientePremium;
+
+        task body Empleado is
+        begin
+            loop
+                select
+                    accept filaPremium(boleta: IN text; dinero: IN OUT integer; comprobante: OUT text) do
+                        atender(boleta, dinero, comprobante);
+                    end filaPremium;
+                or
+                    when (filaPremium'count = 0) =>
+                        accept filaRegular(boleta: IN text; dinero: IN OUT integer; comprobante: OUT text) do
+                            atender(boleta, dinero, comprobante);
+                        end filaRegular;
+                end select;
+            end loop;
+        end Empleado;
+
+    begin
+        null;
+    end Banco;
+```
+> - Dos task types distintos porque se comportan distinto: el regular hace llamada temporizada (30 min = `delay 1800.0`), el premium llamada común.
+> - Prioridad: `filaRegular` solo se acepta si `filaPremium'count = 0`. Dentro de cada fila, orden de llegada (cola FIFO).
 
  12. Se debe controlar el acceso a una base de datos. Existen L procesos Lectores y E procesos Escritores que trabajan indefinidamente de la siguiente manera: 
  • Escritor: intenta acceder para escribir, si no lo logra inmediatamente, espera 1 minuto y vuelve a intentarlo de la misma manera.
  • Lector: intenta acceder para leer, si no lo logró en 2 minutos, espera 5 minutos y vuelve a intentarlo de la misma manera. 
  Un proceso Escritor podrá acceder si no hay ningún otro proceso usando la base de datos; al acceder escribe y sale de la BD. Un proceso Lector podrá acceder si no hay procesos Escritores usando la base de datos; al acceder lee y sale de la BD. Siempre se le debe dar prioridad al pedido de acceso para escribir sobre el pedido de acceso para leer.
+```ada
+    procedure BaseDeDatos is
 
- 1.   la página web del Banco Central exhibe las diferentes cotizaciones del dólar oficial de 20 bancos del país, tanto para la compra como para la venta. Existe una tarea programada que se ocupa de actualizar la página en forma periódica y para ello consulta la cotización de cada uno de los 20 bancos. Cada banco dispone de una API, cuya única función es procesar las solicitudes de aplicaciones externas. La tarea programada consulta de a una API por vez, esperando a lo sumo 5 segundos por su respuesta. Si pasado ese tiempo no respondió, entonces se mostrará vacía la información de ese banco.
+        task BD is
+            entry inicioLectura;
+            entry finLectura;
+            entry escribir(dato: IN text);
+        end BD;
 
- 2.   Una empresa de venta de calzado cuenta con S sedes. En la oficina central de la empresa se utiliza un sistema que permite controlar el stock de los diferentes modelos, ya que cada sede tiene una base de datos propia. El sistema de control de stock funciona de la siguiente manera: dado un modelo determinado, lo envía a las sedes para que cada una le devuelva la cantidad disponible en ellas; al final del procesamiento, el sistema informa el total de calzados disponibles de dicho modelo. Una vez que se completó el procesamiento de un modelo, se procede a realizar lo mismo con el siguiente modelo. Nota: suponga que existe una función DevolverStock(modelo,cantidad) que utiliza cada sede donde recibe como parámetro de entrada el modelo de calzado y retorna como parámetro de salida la cantidad de pares disponibles. Maximizar la concurrencia y no generar demora innecesaria.
+        task type Lector;
+        task type Escritor;
+        lectores: array(1..L) of Lector;
+        escritores: array(1..E) of Escritor;
 
- 3.  Simular el con funcionamiento de un Entrenamiento de Básquet donde hay 20 jugadores y UN entrenador. El entrenador debe distribuir a los jugadores en 2 canchas. Cuando un jugador llega el entrenador le indica la cancha a la cual debe ir para que se dirija a ella y espere hasta que lleguen los 10; en ese momento comienzan a jugar el partido que dura 40 minutos. Cuando ambos partidos han terminado, el entrenador les da a los 20 jugadores una charla de 10 minutos y luego todos se retiran. El entrenador asigna el número de cancha en forma cíclica 1, 2, 1, 2 y así sucesivamente.
+        task body Escritor is
+            dato: text;
+        begin
+            loop
+                dato := generarDato();
+                loop
+                    select                          -- llamada condicional: o entra ya, o nada
+                        BD.escribir(dato);
+                        exit;                       -- pudo escribir: sale del loop de reintentos
+                    else
+                        delay 60.0;                 -- espera 1 minuto y reintenta
+                    end select;
+                end loop;
+            end loop;
+        end Escritor;
 
- 4.   En una empresa de organización de recitales cuentan con un sitio web para la venta de entradas. Existen N personas que quieran comprar una de las E entradas disponibles. Las personas se dividen en pacientes e impacientes. Cuando las personas pacientes intentan hacer la compra en el sitio web, esperan a lo sumo 5 minutos a que el servidor responda. Si pasado ese tiempo no fueran atendidas, lo vuelven a intentar. En el caso de las personas impacientes, si no son atendidas inmediatamente por el servidor, esperan 10 segundos y vuelvan a intentarlo. En todos los casos, el sitio web les dice si pudieron venderle la entrada o no.
+        task body Lector is
+            info: text;
+        begin
+            loop
+                select                              -- llamada temporizada: espera hasta 2 minutos
+                    BD.inicioLectura;
+                    info := leer();                 -- fuera del rendezvous: varios lectores leen a la vez
+                    BD.finLectura;
+                or delay 120.0;
+                    delay 300.0;                    -- no pudo: espera 5 minutos y reintenta
+                end select;
+            end loop;
+        end Lector;
 
- 5.  Simular el funcionamiento de un Complejo de Canchas de Paddle que posee 10 canchas y donde hay UN encargado que se encarga de distribuir a las personas en las canchas. Al complejo acuden 40 personas a jugar. Cuando una persona llega el encargado le indique el número de cancha a la cual debe ir, y se dirige a ella; cuando han llegado los 4 jugadores a la cancha, comienzan a jugar el partido que dura 60 minutos; al terminar el partido las 4 personas se retiran. El encargado asigna el número de cancha según el orden de llegada (los 4 primeros a la cancha 1, los siguientes 4 a la 2 y así sucesivamente). Nota: cuando el encargado ya atendió a las 40 personas debe terminar su ejecución.
- 6.  La oficina central de una empresa de venta de indumentaria debe calcular cuántas veces fue vendido cada uno de los artículos de su catálogo. La empresa se compone de 100 sucursales y cada una de ellas maneja su propia base de datos de ventas. La oficina central cuenta con una herramienta que funciona de la siguiente manera: ante la consulta realizada para un artículo determinado, la herramienta envía el identificador del artículo a las sucursales, para que cada una calcule cuántas veces fue vendido en ella. Al final del procesamiento, la herramienta debe conocer cuántas veces fue vendido en total, considerando todas las sucursales. Cuando ha terminado de procesar un artículo comienza con el siguiente (suponga que la herramienta tiene una función generarArtículo() que retorna el siguiente ID a consultar). Nota: maximizar la concurrencia. Existe una función ObtenerVentas(ID) que retorna la cantidad de veces que fue vendido el artículo con identificador ID en la base de la sucursal que la llama.
+        task body BD is
+            cantLectores: integer := 0;
+        begin
+            loop
+                select
+                    when (cantLectores = 0) =>
+                        accept escribir(dato: IN text) do
+                            escribirDato(dato);
+                        end escribir;
+                or
+                    when (escribir'count = 0) =>
+                        accept inicioLectura;
+                        cantLectores := cantLectores + 1;
+                or
+                    accept finLectura;
+                    cantLectores := cantLectores - 1;
+                end select;
+            end loop;
+        end BD;
+
+    begin
+        null;
+    end BaseDeDatos;
+```
+> - **Lectores concurrentes:** la lectura no puede ir dentro de un `accept` (eso la serializa). Se usa `inicioLectura`/`finLectura` con un contador, y se lee entre medio, fuera del rendezvous.
+> - **Escritor exclusivo:** solo se acepta `escribir` si `cantLectores = 0`; la escritura sí va dentro del `accept`, así nadie más entra mientras escribe.
+> - **Prioridad a escritores:** `inicioLectura` tiene la guarda `escribir'count = 0`.
+> - Escritor: llamada condicional (`select ... else`) + `exit` para salir del loop de reintentos. Lector: llamada temporizada (`or delay 120.0`) y, si falla, `delay 300.0`.
+
+ 13. la página web del Banco Central exhibe las diferentes cotizaciones del dólar oficial de 20 bancos del país, tanto para la compra como para la venta. Existe una tarea programada que se ocupa de actualizar la página en forma periódica y para ello consulta la cotización de cada uno de los 20 bancos. Cada banco dispone de una API, cuya única función es procesar las solicitudes de aplicaciones externas. La tarea programada consulta de a una API por vez, esperando a lo sumo 5 segundos por su respuesta. Si pasado ese tiempo no respondió, entonces se mostrará vacía la información de ese banco.
+```ada
+    procedure BancoCentral is
+
+        task type Banco is
+            entry obtenerCotizacion(compra, venta: OUT real);
+        end Banco;
+
+        task TareaProgramada;
+        bancos: array(1..20) of Banco;
+
+        task body Banco is
+        begin
+            loop                                    -- la API atiende solicitudes indefinidamente
+                accept obtenerCotizacion(compra, venta: OUT real) do
+                    compra := cotizacionCompra();
+                    venta := cotizacionVenta();
+                end obtenerCotizacion;
+            end loop;
+        end Banco;
+
+        task body TareaProgramada is
+            compras, ventas: array(1..20) of real;
+            vacio: array(1..20) of boolean;
+        begin
+            loop                                    -- actualiza la página en forma periódica
+                for i in 1..20 loop                 -- una API por vez
+                    select
+                        bancos(i).obtenerCotizacion(compras(i), ventas(i));
+                        vacio(i) := false;
+                    or delay 5.0;                   -- a lo sumo 5 segundos
+                        vacio(i) := true;           -- se muestra vacía la info de ese banco
+                    end select;
+                end loop;
+                actualizarPagina(compras, ventas, vacio);
+                delay periodo;
+            end loop;
+        end TareaProgramada;
+
+    begin
+        null;
+    end BancoCentral;
+```
+> - Llamada temporizada (`select ... or delay 5.0`) desde la tarea programada, de a un banco por vez (`for`).
+> - Banco y TareaProgramada con `loop`: la actualización es periódica y la API atiende siempre; sin el loop, el banco respondería una sola vez y la segunda vuelta haría timeout en todos.
+> - Se piden compra **y** venta, y "vacía" se marca con un booleano en vez de un 0 (0 podría confundirse con una cotización).
+
+ 14. Una empresa de venta de calzado cuenta con S sedes. En la oficina central de la empresa se utiliza un sistema que permite controlar el stock de los diferentes modelos, ya que cada sede tiene una base de datos propia. El sistema de control de stock funciona de la siguiente manera: dado un modelo determinado, lo envía a las sedes para que cada una le devuelva la cantidad disponible en ellas; al final del procesamiento, el sistema informa el total de calzados disponibles de dicho modelo. Una vez que se completó el procesamiento de un modelo, se procede a realizar lo mismo con el siguiente modelo. Nota: suponga que existe una función DevolverStock(modelo,cantidad) que utiliza cada sede donde recibe como parámetro de entrada el modelo de calzado y retorna como parámetro de salida la cantidad de pares disponibles. Maximizar la concurrencia y no generar demora innecesaria.
+```ada
+    procedure Fabrica is
+
+        task type Sede is
+            entry analizarStock(m: IN integer);
+        end Sede;
+
+        task Central is
+            entry obtenerCant(cant: IN integer);
+        end Central;
+
+        sedes: array(1..S) of Sede;
+
+        task body Sede is
+            modelo, cantidad: integer;
+        begin
+            loop
+                accept analizarStock(m: IN integer) do
+                    modelo := m;                        -- solo copia: rendezvous corto
+                end analizarStock;
+                DevolverStock(modelo, cantidad);        -- fuera del rendezvous: todas las sedes en paralelo
+                Central.obtenerCant(cantidad);
+            end loop;
+        end Sede;
+
+        task body Central is
+            modelo, total: integer;
+        begin
+            loop
+                modelo := generarModelo();
+                total := 0;
+                for i in 1..S loop
+                    sedes(i).analizarStock(modelo);
+                end loop;
+                for i in 1..S loop
+                    accept obtenerCant(cant: IN integer) do
+                        total := total + cant;
+                    end obtenerCant;
+                end loop;
+                informar(modelo, total);
+            end loop;
+        end Central;
+
+    begin
+        null;
+    end Fabrica;
+```
+> - Mismo patrón que el de las sucursales: la Central reparte el modelo con rendezvous cortos, las sedes calculan en paralelo fuera del rendezvous y devuelven la cantidad con una llamada aparte.
+> - Una sede no puede recibir el modelo siguiente antes de entregar su cantidad, y la Central no reparte otro modelo hasta juntar las S respuestas.
+
+ 15. Simular el con funcionamiento de un Entrenamiento de Básquet donde hay 20 jugadores y UN entrenador. El entrenador debe distribuir a los jugadores en 2 canchas. Cuando un jugador llega el entrenador le indica la cancha a la cual debe ir para que se dirija a ella y espere hasta que lleguen los 10; en ese momento comienzan a jugar el partido que dura 40 minutos. Cuando ambos partidos han terminado, el entrenador les da a los 20 jugadores una charla de 10 minutos y luego todos se retiran. El entrenador asigna el número de cancha en forma cíclica 1, 2, 1, 2 y así sucesivamente.
+
+ 16. En una empresa de organización de recitales cuentan con un sitio web para la venta de entradas. Existen N personas que quieran comprar una de las E entradas disponibles. Las personas se dividen en pacientes e impacientes. Cuando las personas pacientes intentan hacer la compra en el sitio web, esperan a lo sumo 5 minutos a que el servidor responda. Si pasado ese tiempo no fueran atendidas, lo vuelven a intentar. En el caso de las personas impacientes, si no son atendidas inmediatamente por el servidor, esperan 10 segundos y vuelvan a intentarlo. En todos los casos, el sitio web les dice si pudieron venderle la entrada o no.
+```ada
+    procedure VentaEntradas is
+
+        task Servidor is
+            entry comprar(dinero: IN integer; ok: OUT boolean);
+        end Servidor;
+
+        task type Persona;
+        personas: array(1..N) of Persona;
+
+        task body Persona is
+            dinero: integer;
+            ok, esPaciente: boolean;
+        begin
+            dinero := obtenerDinero();
+            esPaciente := esPersonaPaciente();
+            if esPaciente then
+                loop
+                    select                              -- llamada temporizada: hasta 5 minutos
+                        Servidor.comprar(dinero, ok);
+                        exit;                           -- fue atendida (con o sin entrada): termina
+                    or delay 300.0;
+                        null;                           -- no la atendieron: reintenta
+                    end select;
+                end loop;
+            else
+                loop
+                    select                              -- llamada condicional: o la atienden ya, o nada
+                        Servidor.comprar(dinero, ok);
+                        exit;
+                    else
+                        delay 10.0;                     -- espera 10 segundos y reintenta
+                    end select;
+                end loop;
+            end if;
+        end Persona;
+
+        task body Servidor is
+            disponibles: integer := E;
+        begin
+            for i in 1..N loop                          -- cada persona es atendida exactamente una vez
+                accept comprar(dinero: IN integer; ok: OUT boolean) do
+                    if disponibles > 0 then
+                        venderEntrada(dinero);
+                        disponibles := disponibles - 1;
+                        ok := true;
+                    else
+                        ok := false;
+                    end if;
+                end comprar;
+            end loop;
+        end Servidor;
+
+    begin
+        null;
+    end VentaEntradas;
+```
+> - Pacientes: llamada **temporizada** (`or delay 300.0`). Impacientes: llamada **condicional** (`else delay 10.0`): "si no son atendidas inmediatamente".
+> - El reintento termina cuando la persona **fue atendida**, no cuando consiguió entrada: si se agotaron, el servidor le responde `false` y se va. Por eso se usa `exit` y no `while not ok`.
+> - El servidor lleva la cuenta de las E entradas. Una sola entry alcanza: no hay prioridad entre pacientes e impacientes, lo que cambia es cómo llama cada uno.
+
+ 17. Simular el funcionamiento de un Complejo de Canchas de Paddle que posee 10 canchas y donde hay UN encargado que se encarga de distribuir a las personas en las canchas. Al complejo acuden 40 personas a jugar. Cuando una persona llega el encargado le indique el número de cancha a la cual debe ir, y se dirige a ella; cuando han llegado los 4 jugadores a la cancha, comienzan a jugar el partido que dura 60 minutos; al terminar el partido las 4 personas se retiran. El encargado asigna el número de cancha según el orden de llegada (los 4 primeros a la cancha 1, los siguientes 4 a la 2 y así sucesivamente). Nota: cuando el encargado ya atendió a las 40 personas debe terminar su ejecución.
+```ada
+    procedure ComplejoPaddle is
+
+        task Encargado is
+            entry pedirCancha(nro: OUT integer);
+        end Encargado;
+
+        task type Cancha is
+            entry llegar;
+            entry terminar;
+        end Cancha;
+
+        task type Persona;
+
+        canchas: array(1..10) of Cancha;
+        personas: array(1..40) of Persona;
+
+        task body Persona is
+            nro: integer;
+        begin
+            Encargado.pedirCancha(nro);
+            canchas(nro).llegar;
+            canchas(nro).terminar;          -- queda esperando hasta que termine el partido
+        end Persona;
+
+        task body Encargado is
+        begin
+            for i in 1..40 loop             -- atiende a las 40 personas y termina
+                accept pedirCancha(nro: OUT integer) do
+                    nro := (i - 1) / 4 + 1; -- los 4 primeros a la 1, los 4 siguientes a la 2...
+                end pedirCancha;
+            end loop;
+        end Encargado;
+
+        task body Cancha is
+        begin
+            for j in 1..4 loop              -- espera a que lleguen los 4 jugadores
+                accept llegar;
+            end loop;
+            delay 3600.0;                   -- partido de 60 minutos
+            for j in 1..4 loop              -- al terminar, se retiran los 4
+                accept terminar;
+            end loop;
+        end Cancha;
+
+    begin
+        null;
+    end ComplejoPaddle;
+```
+> - El encargado responde **apenas llega** cada persona (orden de llegada = cola FIFO de la entry); el número de cancha sale del contador `i`, sin cola ni ids.
+> - La espera de los 4 jugadores, el partido y la salida conjunta los maneja una task `Cancha` por cancha: `llegar` funciona como barrera, y `terminar` retiene a los jugadores hasta que pasan los 60 minutos.
+> - Todo termina: el encargado hace 40 `accept`, cada cancha juega un solo partido.
+
+ 18. La oficina central de una empresa de venta de indumentaria debe calcular cuántas veces fue vendido cada uno de los artículos de su catálogo. La empresa se compone de 100 sucursales y cada una de ellas maneja su propia base de datos de ventas. La oficina central cuenta con una herramienta que funciona de la siguiente manera: ante la consulta realizada para un artículo determinado, la herramienta envía el identificador del artículo a las sucursales, para que cada una calcule cuántas veces fue vendido en ella. Al final del procesamiento, la herramienta debe conocer cuántas veces fue vendido en total, considerando todas las sucursales. Cuando ha terminado de procesar un artículo comienza con el siguiente (suponga que la herramienta tiene una función generarArtículo() que retorna el siguiente ID a consultar). Nota: maximizar la concurrencia. Existe una función ObtenerVentas(ID) que retorna la cantidad de veces que fue vendido el artículo con identificador ID en la base de la sucursal que la llama.
+```ada
+    procedure Empresa is
+
+        task type Sucursal is
+            entry solicitudConsulta(id: IN integer);
+        end Sucursal;
+
+        task Central is
+            entry enviarStock(cant: IN integer);
+        end Central;
+
+        sucursales: array(1..100) of Sucursal;
+
+        task body Central is
+            total, idArt: integer;
+        begin
+            loop
+                idArt := generarArticulo();
+                total := 0;                             -- se reinicia por cada artículo
+                for i in 1..100 loop
+                    sucursales(i).solicitudConsulta(idArt);
+                end loop;
+                for i in 1..100 loop
+                    accept enviarStock(cant: IN integer) do
+                        total := total + cant;
+                    end enviarStock;
+                end loop;
+                informar(idArt, total);
+            end loop;
+        end Central;
+
+        task body Sucursal is
+            idArt, cant: integer;
+        begin
+            loop
+                accept solicitudConsulta(id: IN integer) do
+                    idArt := id;                        -- solo copia: rendezvous corto
+                end solicitudConsulta;
+                cant := ObtenerVentas(idArt);           -- fuera del rendezvous: las 100 en paralelo
+                Central.enviarStock(cant);
+            end loop;
+        end Sucursal;
+
+    begin
+        null;
+    end Empresa;
+```
+> - Para declarar un arreglo de tasks hace falta `task type`; `task Sucursal` declara una sola tarea.
+> - Mismo patrón que el ejercicio 14: reparto con rendezvous cortos, cálculo en paralelo fuera del rendezvous y respuesta con una llamada aparte.

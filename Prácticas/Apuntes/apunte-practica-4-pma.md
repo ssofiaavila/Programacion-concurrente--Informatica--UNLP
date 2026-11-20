@@ -475,3 +475,75 @@ process Trabajador[i=1..K]{
 - [ ] Tiempos en `delay` coherentes con el enunciado (10 min = `delay(600)`, 15 min = `delay(900)`; "entre 1 y 3 minutos" = `delay(random(60,180))`).
 - [ ] Revisar que las ramas de los `if` del Admin/Coordinador hagan el `receive` del canal que corresponde a esa operación.
 - [ ] Si el enunciado dice "maximizar la concurrencia", que ningún proceso haga trabajo que podría hacer otro en paralelo (ej. el cocinero entrega directo al cliente, sin pasar por el vendedor).
+---
+
+# Patrones nuevos que surgieron en los parciales viejos (PMA)
+
+## Recordatorio: el orden de llegada sale gratis
+En PMA el canal es una **cola FIFO**: si todos los pedidos van a un **canal compartido**, `receive` siempre saca el más viejo. Para "atender por orden de llegada" **no hace falta un Admin** (Parcial Ej. 1, 5, 10). El Admin aparece solo cuando hay **prioridades**, **varios recursos que asignar con criterio** o **trabajo alternativo cuando no hay pedidos** (patrones 3, 4 y 5).
+
+## Patrón 7: asignar el servidor con menos gente esperando (Parcial Ej. 11, 12, 13)
+**Enunciado típico:** "se dirige a la cabina/caja/puesto con menos personas esperando".
+**Idea:** un Admin lleva un contador `cant[1..K]` por servidor. Cuando llega alguien, le asigna el mínimo y suma 1; cuando un cliente termina, avisa y resta 1. Las dos operaciones llegan por canales distintos y se usa un **canal de aviso** común (patrón 4) para que el Admin no haga busy waiting. Conviene atender primero las salidas, así el contador está actualizado al asignar.
+```
+chan llegada(int);
+chan salida(int);
+chan aviso();
+chan asignada[1..N](int);
+
+process Cliente[i=1..N]{
+    send llegada(i);
+    send aviso();
+    receive asignada[i](idS);
+    ... // usa el servidor idS (con su prioridad si hay: patrón 4 por servidor)
+    send salida(idS);
+    send aviso();
+}
+
+process Admin{
+    int cant[1..K] = ([K] 0);
+    while (true){
+        receive aviso();
+        if (not empty(salida)){
+            receive salida(idS);
+            cant[idS]--;
+        } else {
+            receive llegada(idC);
+            idS = minimo(cant);
+            cant[idS]++;
+            send asignada[idC](idS);
+        }
+    }
+}
+```
+> Cada servidor recibe por **sus propios canales** (`atencion[idS]`, `prioritarios[idS]`, `normales[idS]`) con el patrón 4 adentro si hay prioridad (ambulancias, sanitarios, clientes especiales).
+
+## Patrón 8: K recursos iguales con prioridad (Parcial Ej. 3, gimnasio con 3 máquinas)
+**Idea:** el Admin lleva `disponibles` y **una cola por tipo** de pedido. Si llega un pedido y hay recurso libre, lo asigna; si no, lo encola. Cuando se libera un recurso, se lo da primero a la cola prioritaria.
+```
+// rama de llegada (dentro del while con receive aviso())
+if (disponibles > 0){ disponibles--; send usar[id](); }
+else push(colaTipo, id);
+
+// rama de liberación
+receive liberar();
+if (not empty(colaPrioritaria)) { pop(colaPrioritaria, id); send usar[id](); }
+elsif (not empty(colaNormal))   { pop(colaNormal, id);      send usar[id](); }
+else disponibles++;               // solo se suma si nadie lo toma
+```
+> Ojo: si la máquina se le pasa directo a alguien que estaba esperando, `disponibles` **no** cambia.
+
+## Patrón 9: barrera en PMA (Parcial Ej. 6, examen final)
+**Idea:** el que coordina cuenta los avisos con un `for` y después libera a cada uno por su canal privado.
+```
+process Alumno[i=1..E]{
+    send llegada();
+    receive enunciado[i](e);
+    ...
+}
+process Profesor{
+    for (k=1..E) receive llegada();
+    for (k=1..E) send enunciado[k](e);
+    ...
+}
+```

@@ -612,3 +612,75 @@ process Admin {
 - [ ] ¿El Admin hace trabajo pesado? Pasárselo a un trabajador.
 - [ ] ¿Todos los procesos terminan? Revisar `while (true)`, `do` sin contador y procesos que quedan esperando un mensaje que nunca llega (patrón G).
 - [ ] ¿La guarda usa el contenido del mensaje que todavía no recibió? No se puede: la condición `B` sólo mira variables locales.
+
+---
+
+# Patrones nuevos que surgieron en los parciales viejos (PMS)
+
+## Recordatorio: en PMS el orden de llegada NO sale gratis
+- Si varios procesos están bloqueados en `!` hacia el mismo receptor, `Proceso[*]?` elige **cualquiera**, no el primero. Lo mismo pasa con varias guardas habilitadas.
+- Por eso, "orden de llegada" en PMS ⇒ **un proceso con cola** que siempre esté listo para recibir y encolar (patrón B / C2 / C3).
+- **Ese proceso puede ser el mismo servidor** si no queda ocupado haciendo trabajo largo (Empleado que solo da paso a una máquina, patrón C3). Si el servidor trabaja (imprime, corrige), va un **Admin aparte**.
+
+## Error típico visto en parciales: atender por id creyendo que es por llegada
+```
+for (i=1..P) {
+  Deportista[i]?llegada();      // MAL si piden orden de llegada: esto es el patrón D (orden por id)
+  ...
+}
+```
+Y tampoco alcanza `Deportista[*]?llegada(id)` si después el servidor se queda bloqueado esperando el `liberar`: los que llegan mientras tanto quedan trabados en su `!` y luego compiten.
+
+## H. Barrera de inicio + recurso en orden de llegada (Parcial Ej. 9, tirolesa)
+**Idea:** combinar el patrón F (barrera) con el C2 (Admin con cola + quien da paso). Cada rol en su proceso:
+- **Empleado:** junta las N llegadas, da la charla y libera a todos.
+- **Admin:** encola los pedidos de uso en orden.
+- **Guía:** pide el siguiente al Admin, le da paso y espera que termine.
+```
+process Turista[i=1..T] {
+  Empleado!llegada();
+  Empleado?avanzar();               // barrera
+  Admin!espera(i);
+  Guia?pasar();
+  usar();
+  Guia!salir();
+}
+
+process Empleado {
+  for (k=1..T) Turista[*]?llegada();
+  darCharla();
+  for (k=1..T) Turista[k]!avanzar();
+}
+
+process Admin {
+  queue cola;  int cant = 0, idT;
+  do cant < T; Turista[*]?espera(idT) -> push(cola, idT); cant++;
+     not empty(cola); Guia?listo() -> pop(cola, idT); Guia!siguiente(idT);
+  od
+}
+
+process Guia {
+  int idT;
+  for (k=1..T) {
+    Admin!listo();
+    Admin?siguiente(idT);
+    Turista[idT]!pasar();
+    Turista[idT]?salir();
+  }
+}
+```
+
+## I. Entregas repetidas hasta que esté bien (Parcial Ej. 11, torneo)
+**Idea:** es el patrón B, pero el cliente **vuelve a entrar al Admin** mientras la respuesta sea "tiene errores". El Admin no cambia: cada reentrega es un pedido nuevo que se encola al final (respeta el orden de entrega).
+```
+process Competidor[i=1..N] {
+  boolean error = true;
+  sol = resolver(desafio);
+  while (error) {
+    Admin!entregar(sol, i);
+    Supervisor[*]?resultado(error);  // no sabe qué supervisor lo corrige
+    if (error) sol = corregir(sol);
+  }
+}
+```
+> Recordar: en las guardas del Admin solo van `?` (`Supervisor[*]?listo(idS)`), nunca `!`.
