@@ -470,21 +470,363 @@ process Empleado[i=1..20]{
 
  12. Se debe simular el uso de un sistema virtual de venta de entradas para un evento musical. El sistema cuenta con C cajeros virtuales que atienden indefinidamente. Sin embargo, como la venta de entradas comienza a una hora determinada, sólo atienden a partir del aviso de un timer. Una vez que reciben dicho aviso, los cajeros atienden de acuerdo con el orden de llegada de los compradores. La atención consiste en recibir la solicitud del comprador (datos para el pago) y responderle si puedo comprar junto al comprobante de la operación. Para este evento se cuenta con E entradas y N compradores, donde cada comprador puede solicitar a lo sumo una entrada.
     *Solución:* `Parciales/Soluciones años anteriores/PConcu-2024---Soluciones-parcial-MC1-versiona2.pdf` (parcial MC1 7-10-24, ej. 1, págs. 1-2)
+```
+sem mutexFila= 1;
+queue colaC;
+sem iniciarVenta= 0;
+sem avisarAtencion= 0;
+sem esperaRtdo[N]= ([N] 0);
+text solicitudes[N];
+text comprobantes[N];
+int nrosEntrada[N];
+sem mutexEntradas= 1;
+int entradas= E;
+
+    process Comprador[i=1..N]{
+        text solicitud, comprobante;
+        int nroEntrada;
+
+        solicitud= generarSolicitud();
+        solicitudes[i]= solicitud;
+        P(mutexFila);
+        push(colaC, i);
+        V(mutexFila);
+        V(avisarAtencion);
+        P(esperaRtdo[i]);
+        nroEntrada= nrosEntrada[i];         // -1 si no pudo comprar
+        comprobante= comprobantes[i];
+    }
+
+    process Caja[i=1..C]{
+        int idC, nroE;
+        text solicitud, comprobante;
+
+        P(iniciarVenta);
+        while (true){
+            P(avisarAtencion);
+            P(mutexFila);
+            pop(colaC, idC);
+            V(mutexFila);
+            solicitud= solicitudes[idC];
+            P(mutexEntradas);
+            if (entradas > 0){
+                entradas--;
+                nroE= entradas;
+            } else {
+                nroE= -1;
+            }
+            V(mutexEntradas);
+            if (nroE != -1){
+                comprobante= generarComprobante(solicitud, nroE);
+            } else {
+                comprobante= "sin entradas";
+            }
+            nrosEntrada[idC]= nroE;
+            comprobantes[idC]= comprobante;
+            V(esperaRtdo[idC]);             // despierta al comprador
+        }
+    }
+
+    process Timer{
+        delay(horaInicio);
+        for (i=1..C){
+            V(iniciarVenta);
+        }
+    }
+```
 
  13. El CUIT es una clave que se usa en sistemas tributarios en Argentina para identificar a las personas. Consta de un total de once cifras numéricas siendo la última un dígito verificador (del 0 al 9). Una empresa cuenta con una lista de CUITs que debe procesar, debiendo informar la cantidad de CUITs por dígito verificador. Para ello, dispone de un software que emplea 5 workers, los cuales trabajan colaborativamente procesando de un CUIT por vez cada uno. Al finalizar el procesamiento, el último worker en terminar debe informar los resultados del procesamiento. Notas: la función obtenerDV(CUIT) retorna el dígito verificador para el CUIT recibida como entrada. La lista de CUITs se almacena como una cola global y la solución debe maximizar la concurrencia.
+```
+sem mutexCola= 1;
+queue colaCuits;
+sem digitos[10]= ([10] 1);
+int cant_digitos[10]= ([10] 0);
+int cantTerminaron= 0;
+sem mutexAviso= 1;
+
+    process Worker[i=1..5]{
+        int cuit, digitoV;
+        boolean seguir= true;
+
+        while (seguir){
+            P(mutexCola);
+            if (empty(colaCuits)){
+                seguir= false;
+            } else {
+                pop(colaCuits, cuit);
+            }
+            V(mutexCola);
+            if (seguir){                    // solo procesa si sacó un CUIT
+                digitoV= obtenerDV(cuit);
+                P(digitos[digitoV]);
+                cant_digitos[digitoV]++;
+                V(digitos[digitoV]);
+            }
+        }
+        P(mutexAviso);
+        cantTerminaron++;
+        if (cantTerminaron == 5){
+            for (d=0..9){
+                print(d, cant_digitos[d]);
+            }
+        }
+        V(mutexAviso);
+    }
+```
 
  14. Existe una sala de cine 3D, a las que asisten N personas a ver una película. Antes de entrar a la sala, los asistentes deben retirar los anteojos 3D en la máquina repartidora que se encuentra en la entrada. Se debe simular el uso de la máquina repartidora de anteojos con capacidad para A anteojos (A < N). Además, existe un repositor encargado de reponer los anteojos en la máquina cuando se agotan. Los usuarios usan la máquina según el orden de llegada. Cuando les toca usarla, sacan un par de anteojos y luego se dirige a la sala. En caso de que la máquina se quede sin anteojos, entonces le debe avisar al repositor para que cargue nuevamente la máquina en forma completa. Luego de la recarga, saca un par de anteojos y se retira. La reposición de anteojos no debe impedir que otros puedan agregarse a la fila.
+```
+sem mutexFila= 1;
+queue cola;
+sem esperarTurno[N]= ([N] 0);
+boolean libre= true;
+int anteojos= A;
+sem avisarRepositor= 0;
+sem esperaDisponibilidad= 0;
+
+    process Persona[i=1..N]{
+        int aux;
+        P(mutexFila);
+        if (not libre){
+            push(cola, i);
+            V(mutexFila);
+            P(esperarTurno[i]);
+        } else {
+            libre= false;
+            V(mutexFila);
+        }
+        if (anteojos == 0){
+            V(avisarRepositor);
+            P(esperaDisponibilidad);
+        }
+        anteojos--;
+        tomarAnteojos();
+        P(mutexFila);
+        if (not empty(cola)){
+            pop(cola, aux);
+            V(esperarTurno[aux]);
+        } else {
+            libre= true;
+        }
+        V(mutexFila);
+    }
+
+    process Repositor{
+        while (true){
+            P(avisarRepositor);
+            delay(reposicion);
+            anteojos= A;
+            V(esperaDisponibilidad);
+        }
+    }
+```
 
  15. En una estación de trenes, asisten P personas que deben realizar una carga de su tarjeta SUBE en la terminal disponible. La terminal es utilizada en forma exclusiva por cada personal de acuerdo con el orden de llegada. Implemente una solución usando únicamente procesos Persona. La función usarTerminal() le permite cargar la SUBE en la terminal disponible.
     *Solución:* `Parciales/Soluciones años anteriores/PConcu-2023---Soluciones-parcial-MC.pdf` (parcial MC 10-10-23, ej. 1 inciso a, pág. 1)
+```
+sem mutexFila= 1;
+queue fila;
+sem espera[P]= ([P] 0);
+boolean libre= true;
 
+process Persona[i=1..P]{
+    int aux;
+    P(mutexFila);
+    if (not libre){
+        push(fila, i);
+        V(mutexFila);
+        P(espera[i]);
+    } else {
+        libre= false;
+        V(mutexFila);
+    }
+    usarTerminal();
+    P(mutexFila);
+    if (not empty(fila)){
+        pop(fila, aux);
+        V(espera[aux]);                     // despierta al siguiente
+    } else {
+        libre= true;
+    }
+    V(mutexFila);
+}
+```
  16. En una empresa hay un coordinar y 30 empleados que formarán 3 grupos de 10 empleados cada uno. Cada grupo trabaja en una sección diferente y debe realizar 345 unidades de un producto. Cada empleado al llegar se dirige al coordinador para que le indique el número de grupo al que pertenece y una vez que conoce este dato comienza a trabajar hasta que se han terminado de hacer las 345 unidades correspondientes al grupo (cada unidad es hecha por un único empleado). Al terminar de hacer las 345 unidades los 10 empleados del grupo se deben juntar para retirarse todos juntos. El coordinar debe atender a los empleados de acuerdo al orden de llegada para darle el número de grupo (a los 10 primeros que lleguen se le asigna el grupo 1, a los 10 del medio el 2 y a los 10 últimos el 3). Cuando todos los grupos terminaron de trabajar el coordinador debe informar (imprimir en pantalla) el empleado que más unidades ha realizado (si hubiese más de uno con la misma cantidad máxima debe informarlos a todos ellos. Existe una función generar() que simula la elaboración de una unidad de un producto.
+```
+sem mutexFila= 1;
+queue colaE;
+sem avisarAsignacion= 0;
+sem esperaTurno[30]= ([30] 0);
+int grupos[30]= ([30] 0);
+sem mutexCant[3]= ([3] 1);
+int cant[3]= ([3] 0);
+sem mutexTerminaron[3]= ([3] 1);
+int cantTerminaron[3]= ([3] 0);
+sem retirarse[3]= ([3] 0);
+int cantEmpleado[30]= ([30] 0);
+sem mutexAvisarFin= 1;
+int empleadosTerminados= 0;
+sem avisarCoordinador= 0;
+
+    process Empleado[i=1..30]{
+        int nroGrupo;
+        boolean seguir= true;
+        int cantHechas= 0;
+
+        P(mutexFila);
+        push(colaE, i);
+        V(mutexFila);
+        V(avisarAsignacion);
+        P(esperaTurno[i]);
+        nroGrupo= grupos[i];
+        while (seguir){
+            P(mutexCant[nroGrupo]);         // primero reserva la unidad
+            if (cant[nroGrupo] < 345){
+                cant[nroGrupo]++;
+            } else {
+                seguir= false;
+            }
+            V(mutexCant[nroGrupo]);
+            if (seguir){                    // y después la fabrica
+                generar();
+                cantHechas++;
+            }
+        }
+        cantEmpleado[i]= cantHechas;
+        P(mutexTerminaron[nroGrupo]);
+        cantTerminaron[nroGrupo]++;
+        if (cantTerminaron[nroGrupo] == 10){
+            for j=1..10 {
+                V(retirarse[nroGrupo]);
+            }
+        }
+        V(mutexTerminaron[nroGrupo]);
+        P(retirarse[nroGrupo]);
+        P(mutexAvisarFin);
+        empleadosTerminados++;
+        if (empleadosTerminados == 30){
+            V(avisarCoordinador);
+        }
+        V(mutexAvisarFin);
+    }
+
+    process Coordinador{
+        int idE, max= -1;
+
+        for g=1..3{
+            for j=1..10{
+                P(avisarAsignacion);
+                P(mutexFila);
+                pop(colaE, idE);
+                V(mutexFila);
+                grupos[idE]= g;
+                V(esperaTurno[idE]);
+            }
+        }
+        P(avisarCoordinador);
+        for e=1..30{
+            if (cantEmpleado[e] > max){
+                max= cantEmpleado[e];
+            }
+        }
+        for e=1..30{                        // puede haber más de uno con el máximo
+            if (cantEmpleado[e] == max){
+                print(e, max);
+            }
+        }
+    }
+```
 
  17. Se debe simular el uso de una máquina expendedora de gaseosas con capacidad para 100 latas por parte de U usuarios. Además existe un repositor encargado de reponer las latas de la máquina. Los usuarios usan la máquina según el orden de llegada. Cuando les toca usarla, sacan una lata y luego se retiran. En el caso de que la máquina se queda sin latas, entonces le debe avisar al repositor para que cargue nuevamente la máquina en forma completa. Luego de la recarga, saca una lata y se retira. Mientras se reponen las latas se deben permitir que otros usuarios puedan agregarse a la fila.
     *Solución:* `Parciales/Soluciones años anteriores/PConcu-2023---Soluciones-parcial-3.pdf` (parcial 18-12-23, ej. 1, págs. 1-2)
+```
+sem mutexFila= 1;
+boolean libre= true;
+queue colaU;
+sem espera[U]= ([U] 0);
+sem avisarRepositor= 0;
+sem avisarDisponible= 0;
+int cant= 100;
+
+    process Usuario[i=1..U]{
+        int aux;
+        P(mutexFila);
+        if (libre){
+            libre= false;
+            V(mutexFila);
+        } else{
+            push(colaU, i);
+            V(mutexFila);
+            P(espera[i]);
+        }
+        if (cant == 0){
+            V(avisarRepositor);
+            P(avisarDisponible);
+        }
+        cant--;
+        sacarLata();
+        P(mutexFila);
+        if (not empty(colaU)){
+            pop(colaU, aux);
+            V(espera[aux]);
+        } else {
+            libre= true;
+        }
+        V(mutexFila);
+    }
+
+    process Repositor{
+        while (true){
+            P(avisarRepositor);
+            delay(reposicion);
+            cant= 100;
+            V(avisarDisponible);
+        }
+    }
+```
 
  18. En una fábrica de muebles trabajan 50 empleados. Al llegar, los empleados forman 10 grupos de 5 personas cada uno, de acuerdo al orden de llegada (los 5 primeros en llegar forman el primer grupo, los 5 siguientes al segundo grupo, y así sucesivamente). Cuando un grupo se ha terminado de formar, todos sus integrantes se ponen a trabajar. Cada grupo debe armar M muebles (cada mueble es armado por un solo empleado) mientras haya muebles por armar en el grupo los empleados los irán resolviendo (cada mueble es armado por un solo empleado). Cada empleado puede tardar distinto tiempo en armar un mueble. Sólo se pueden usar los procesos Empleado y todos deben terminar su ejecución.
     *Solución:* `Parciales/Soluciones años anteriores/PConcu-2022---Soluciones-parcial-fecha-3.pdf` (parcial 13-12-22, ej. 1, pág. 1)
+```
+sem mutexLlegada= 1;
+int llegados= 0;
+int cant_llegados[10]= ([10] 0);
+sem mutexGrupo[10]= ([10] 1);
+sem iniciarGrupo[10]= ([10] 0);
+sem mutexMuebles[10]= ([10] 1);
+int cantMuebles[10]= ([10] 0);
+
+    process Empleado[i=1..50]{
+        int nroGrupo;
+        boolean seguir= true;
+
+        P(mutexLlegada);
+        nroGrupo= (llegados / 5) + 1;       // 0..4 -> grupo 1, 5..9 -> grupo 2, ...
+        llegados++;
+        V(mutexLlegada);
+        P(mutexGrupo[nroGrupo]);
+        cant_llegados[nroGrupo]++;
+        if (cant_llegados[nroGrupo] == 5){
+            for j=1..5{
+                V(iniciarGrupo[nroGrupo]);
+            }
+        }
+        V(mutexGrupo[nroGrupo]);
+        P(iniciarGrupo[nroGrupo]);
+        while (seguir){
+            P(mutexMuebles[nroGrupo]);      // primero reserva el mueble
+            if (cantMuebles[nroGrupo] < M){
+                cantMuebles[nroGrupo]++;
+            } else {
+                seguir= false;
+            }
+            V(mutexMuebles[nroGrupo]);
+            if (seguir){                    // y después lo arma
+                armarMueble();
+            }
+        }
+    }
+```
 
  19. Simular un examen técnico para concursos NoDocentes de la facultad. En el mismo participan 100 personas distribuidas en 4 concursos con un coordinador en cada una de ellos. Cada persona ya conoce en qué concurso participa. El coordinador de cada concurso espera hasta que lleguen las 25 personas correspondientes al mismo, les entrega el examen a resolver y luego corrige los exámenes de esas 25 personas de acuerdo al orden en que van entregando. Cada persona al llegar debe esperar a que su coordinador le de el examen, lo resuelve, lo entrega para que su coordinador lo evalúe y espera hasta que le deje la nota para luego retirarse. Sólo usar los procesos que representen a las personas y a los coordinadores, todos deben terminar.
 
