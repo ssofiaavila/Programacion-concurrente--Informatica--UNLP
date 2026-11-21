@@ -829,7 +829,63 @@ int cantMuebles[10]= ([10] 0);
 ```
 
  19. Simular un examen técnico para concursos NoDocentes de la facultad. En el mismo participan 100 personas distribuidas en 4 concursos con un coordinador en cada una de ellos. Cada persona ya conoce en qué concurso participa. El coordinador de cada concurso espera hasta que lleguen las 25 personas correspondientes al mismo, les entrega el examen a resolver y luego corrige los exámenes de esas 25 personas de acuerdo al orden en que van entregando. Cada persona al llegar debe esperar a que su coordinador le de el examen, lo resuelve, lo entrega para que su coordinador lo evalúe y espera hasta que le deje la nota para luego retirarse. Sólo usar los procesos que representen a las personas y a los coordinadores, todos deben terminar.
+```
+sem mutexFila[4]=([4] 1);
+cantLlegados[4]=([4] 0);
+queue fila[4];
+sem avisarLlegada[4]=([4] 0);
+sem esperaEnunciado=[100]= ([100] 0);
+enunciados[100];
+sem mutexExamenes[4]=([4] 1);
+queue examenes[4];
+sem avisarCorreccion[4]=([4] 0);
+sem esperaCorreccion[100]=([100] 0);
+notas[100];
 
+    process NoDocente[i=1..100]{
+        int nroConcurso, nota;
+        text enunciado, examen;
+
+        nroConcurso= obtenerNroConcurso();
+        P(mutexFila[nroConcurso]);
+        cantLlegados[nroConcurso]++;
+        push(fila[nroConcurso], i);
+        if (cantLlegados[nroConcurso] == 25){
+            V(avisarLlegada[nroConsurso]);
+        }
+        V(mutexFila[nroConcurso]);
+        P(esperaEnunciado[i]);
+        enunciado= enunciados[i];
+        examen= resolverExamen(enunciado);
+        P(mutexExamenes[nroConcurso]);
+        push(examenes[nroConcurso], (i, examen));
+        V(mutexExamenes[nroConcurso]);
+        V(avisarCorreccion[nroConcurso]);
+        P(esperaCorreccion[i]);
+        nota= notas[i];
+    }
+
+    process Coordinador[i=1..4]{
+        int id, nota;
+        text examen;
+
+        P(avisarLlegada[i]);
+        for j=1..25{
+            pop(fila[i], id);
+            enunciados[i]= generarEnunciado();
+            V(esperaEnunciado[id]);
+        }        
+        for j=1..25{
+            P(avisarCorreccion[i]);
+            P(mutexExamenes[i]);
+            pop(examenes[i], (id, examen));
+            V(mutexExamenes[i]);
+            nota= corregir(examen);
+            notas[id]= nota;
+            V(esperarCorreccion[id]);
+        }
+    }
+```
  20. Se debe simular el funcionamiento de una mesa de votación en una elección donde hay 2 listas candidatas (A y B). A la misma acuden 300 personas para votar en el cuarto oscuro (se dispone de una función obtenervoto() que retorna la lista a votar A o B). Además está el presidente de mesa que es quien habilita a las personas a pasar a pasar al cuarto oscuro de a una a la vez de acuerdo al orden de llegada y cuando todas las personas han votado determina cual es la lista ganadora.
 
  21. En un examen final hay P alumnos y 3 profesores. Cuando todos los alumnos y profesores han llegado comienza el examen. Para esto uno de los profesores (el primero en llegar) le da el examen a cada alumno. Cada alumno resuelve su examen, lo entrega y espera a que alguno de los profesores lo corrija y le indique la nota. Los profesores corrigen los exámenes respetando el orden en que los alumnos van entregando.
