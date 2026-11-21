@@ -1046,10 +1046,119 @@ sem iniciarCorreccion[3]= ([3] 0);
  1. Resolver con monitores el siguiente problema. En un sistema operativo se ejecutan 20 procesos que periódicamente realizan cierto cómputo mediante la función Procesar(). Los resultados de dicha función son persistidos en un archivo, para lo que se requiere de acceso al subsistema de E/S. Sólo un proceso a la vez puede hacer uso del subsistema de E/S, y el acceso al mismo se define por la prioridad del proceso (menos valor indica mayor prioridad).
     *Solución:* `Parciales/Soluciones años anteriores/PConcu-2022---Soluciones-parcial-MC.pdf` (parcial MC 11-10-22, ej. 2, pág. 3)
     *Solución a mano (no oficial):* `Parciales/Memoria compartida- 1ra parte/Parcial 1- 1ra fecha 2022.pdf` (ej. 2, pág. 2)
+```
+    process Proceso[i=1..20]{
+        int prioridad= obtenerPrioridad();
+        while (true){
+            resultados= Procesar();
+            SubsistemaES.pedir(i, prioridad);
+            Persistir(resultados);
+            SubsistemasES.liberar();
+        }
+    }
+
+    Monitor SubsistemaES{
+        int esperando= 0;
+        int usando= 0;
+        cond colas[N];
+        queue(int, int) en_espera;
+
+        procedure pedir(int id, int prioridad){
+            if (usando > 0){
+                esperando++;
+                push(en_espera, (prioridad, id));
+                wait[colas[id]];
+            } else {
+                usando++;
+            }
+        }
+
+        procedure liberar(){
+            if (esperando > 0){
+                int id= pop(en_espera);
+                signal(colas[id]);
+                esperando--
+            } else {
+                usando--;
+            }
+        }
+    }
+```
 
  2. Simular una atención en una Salita Medica para vacunar contra el coronavirus. Hay UNA enfermera encargada de vacunar a 30 pacientes. Cada paciente tiene un turno asignado (valor entre 1 y 30 ya conocido por el paciente). La enfermera atiende a los pacientes de acuerdo al turno que cada uno tiene asignado. Cada paciente al llegar espera a que sea su turno y se dirige al consultorio para que la enfermera lo vacune y luego se retira. Nota: suponer que existe una función Vacunar() que simula la atención del paciente por parte de la enfermera. Todos los procesos DEBEN terminar.
+```
+    Monitor Sala{
+        boolean llego[30]= ([30] false);
+        cond esperaEnfermera;
+        cond esperaFin[30];
+
+        procedure llegar(int turno){
+            llego[turno]= true;
+            signal(esperaEnfermera);        
+            wait(esperaFin[turno]);         // espera hasta que lo vacunen
+        }
+
+        procedure esperarPaciente(int turno){
+            while (not llego[turno]) wait(esperaEnfermera);     
+        }
+
+        procedure terminarAtencion(int turno){
+            signal(esperaFin[turno]);
+        }
+    }
+
+    process Paciente[i=1..30]{
+        int turno;
+
+        turno= obtenerNroTurno();
+        Sala.llegar(turno);
+    }
+
+    process Enfermera{
+        for t=1..30{                        // atiende por turno: 1, 2, ..., 30
+            Sala.esperarPaciente(t);
+            Vacunar();                      // fuera del monitor
+            Sala.terminarAtencion(t);
+        }
+    }
+```
 
  3. Simular el uso de un puente de un solo carril y sentido por donde puede pasar un vehículo a la vez. Hay N vehículos donde algunos son autos y otros ambulancias. Los vehículos deben pasar de acuerdo al orden de llegada, pero siempre dando prioridad a las ambulancias. Suponga que cada vehículo tarda 5 minutos en pasar por el puente.
+```
+    process Vehiculo[i=1..N]{
+        text tipoVehiculo;
+
+        tipoVehiculo= obtenerTipo();
+        Puente.ingreso(i, tipoVehiculo);
+        CruzarPuente();
+        Puente.salida();
+    }
+
+    Monitor Puente{
+        boolean ocupado= false;
+        queue filaE;
+        cond esperaIngreso[N];
+        process ingreso(int id, text tipoVehiculo){
+            if (ocupado){
+                insertarPorPrioridad(filaE, id, tipoVehiculo);
+                wait(esperaIngreso[id]);
+            } else {
+                ocupado= true;
+            }
+        }
+
+        process salida(){
+            int aux;
+
+            if (not empty filaE){
+                pop(filaE, aux);
+                signal(esperaIngreso[aux]);
+            } else {
+                ocupado= false;
+            }
+        }
+    }
+```
 
  4. Se debe simular una carrera a campo traviesa con C corredores, donde en la mitad del recorrido hay un puente colgante que puede ser usado por una única persona a la vez. Cuando los C corredores han llegado al punto de partida comienza la carrera.Cuando un corredor llega al puente espera su turno (respetando el orden de llegada al mismo) y lo cruza (suponga que tarda un par de minutos en cruzarlo) luego continua su carrera hasta llegar a la meta. Nota: Cada corredor pasa solo una vez por el puente. Solo se pueden usar procesos que representen a los corredores.
 
@@ -1061,7 +1170,7 @@ sem iniciarCorreccion[3]= ([3] 0);
 
  8. En una acopiadora de cereales hay 2 empleados, uno para atender a los camiones de maíz y otro para los de girasol. Hay 30 camiones que llegan para descargar su carga (15 de maíz y 15 de girasol), cuando el camión llega espera hasta que el empleado correspondiente le avise que puede descargar el cereal. Cada empleado hace descargar los camiones que le corresponden de a uno a la vez y de acuerdo con el orden de llegada. El camión sabe qué tipo de cereal lleva; todos los procesos deben terminar.
 
- 9. En una oficina hay un supervisor, un empleado y 50 personas que solicitan por mail una operación. El empleado SOLO atiende CONSULTAS, mientras que el supervisor sólo atiende TRÁMITES; cada uno atiende sus pedidos de acuerdo con el orden de llegada. Cada persona envía UNA solicitud que puede ser un TRÁMITE o para una CONSULTA, y luego espera a que le envíe el resultado. La persona sabe de qué tipo es la consulta, el empleado y el supervisor NO deben terminar su ejecución.
+ 9.  En una oficina hay un supervisor, un empleado y 50 personas que solicitan por mail una operación. El empleado SOLO atiende CONSULTAS, mientras que el supervisor sólo atiende TRÁMITES; cada uno atiende sus pedidos de acuerdo con el orden de llegada. Cada persona envía UNA solicitud que puede ser un TRÁMITE o para una CONSULTA, y luego espera a que le envíe el resultado. La persona sabe de qué tipo es la consulta, el empleado y el supervisor NO deben terminar su ejecución.
 
  10. Existen N personas que desean acceder a un mirador al borde del lago Nahuel Huapi en Bariloche. Como el
     mirador es angosto, sólo puede ser usado por una persona a la vez.
