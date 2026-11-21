@@ -1161,8 +1161,108 @@ sem iniciarCorreccion[3]= ([3] 0);
 ```
 
  4. Se debe simular una carrera a campo traviesa con C corredores, donde en la mitad del recorrido hay un puente colgante que puede ser usado por una única persona a la vez. Cuando los C corredores han llegado al punto de partida comienza la carrera.Cuando un corredor llega al puente espera su turno (respetando el orden de llegada al mismo) y lo cruza (suponga que tarda un par de minutos en cruzarlo) luego continua su carrera hasta llegar a la meta. Nota: Cada corredor pasa solo una vez por el puente. Solo se pueden usar procesos que representen a los corredores.
+```
+    process Corredor[i=1..C]{
+        Puente.llegar();
+        Correr();
+        Puente.ingresar(i);
+        CruzarPuente();
+        Puente.salir();
+    }
 
- 5. Simular la atención en un centro de vacunación con 8 puestros para vacunación contra el coronavirus. Al centro acuden 200 paciente donde cada uno de ellos ya conoce el puesto al que se debe dirigir. En cada puestro hay un empleado para vacunar a los pacientes asignados a dicho puestro y lo hace de acuerdo al orden dado por la edad de paciente (cuando está libre atiende al de mayor edad que esté esperando en ese momento en ese puesto). Cada paciente al llegar al puesto que tenía asignado espera a que lo llamen y se dirige a la silla para que el empleado lo vacune y luego se retira. Suponer que existe una función Vacunar() que simula la atención del paciente. Suponer que cada puesto tiene asignado 25 pacientes. Todos los procesos deben terminar.
+    Monitor Puente{
+        boolean libre= true;
+        queue fila;
+        cond espera[C];
+
+        procedure llegar(){
+            llegados++;
+            if (llegados < C){
+                wait(esperaInicio);
+            } else {
+                signal_all(esperaInicio);
+            }
+        }
+
+        procedure ingresar(int id){
+            if (not libre){
+                push(fila, id);
+                wait(espera[id]);
+            } else{
+                libre= false;
+            }
+        }
+
+        process salir(){
+            int id;
+
+            if not empty fila{
+                pop(fila, id);
+                signal(espera[id]);
+            } else {
+                libre= true;
+            }
+        }
+    }
+```
+
+ 5. Simular la atención en un centro de vacunación con 8 puestos para vacunación contra el coronavirus. Al centro acuden 200 paciente donde cada uno de ellos ya conoce el puesto al que se debe dirigir. En cada puestro hay un empleado para vacunar a los pacientes asignados a dicho puesto y lo hace de acuerdo al orden dado por la edad de paciente (cuando está libre atiende al de mayor edad que esté esperando en ese momento en ese puesto). Cada paciente al llegar al puesto que tenía asignado espera a que lo llamen y se dirige a la silla para que el empleado lo vacune y luego se retira. Suponer que existe una función Vacunar() que simula la atención del paciente. Suponer que cada puesto tiene asignado 25 pacientes. Todos los procesos deben terminar.
+```
+    Monitor Puesto[p=1..8]{
+        queue fila;                         // ordenada por edad, de mayor a menor
+        cond esperarLlamado[200];
+        cond avisarDisponible;
+        cond esperarIngreso;
+        cond avisoRetiro;
+        boolean llegoPaciente= false;
+
+        procedure avisarLlegada(int id, int edad){
+            insertarOrdenado(fila, id, edad);
+            signal(avisarDisponible);
+            wait(esperarLlamado[id]);
+        }
+
+        procedure llamarPaciente(){
+            int id;
+            while (empty(fila)) wait(avisarDisponible);
+            pop(fila, id);                  // el de mayor edad en este momento
+            signal(esperarLlamado[id]);
+        }
+
+        procedure sentarse(){               // avisa y espera el fin en la misma llamada
+            llegoPaciente= true;
+            signal(esperarIngreso);
+            wait(avisoRetiro);
+        }
+
+        procedure esperarPaciente(){
+            while (not llegoPaciente) wait(esperarIngreso);
+            llegoPaciente= false;           // queda listo para el próximo
+        }
+
+        procedure avisarFin(){
+            signal(avisoRetiro);
+        }
+    }
+
+    process Paciente[i=1..200]{
+        int nroPuesto, edad;
+
+        edad= obtenerEdad();
+        nroPuesto= obtenerPuesto();
+        Puesto[nroPuesto].avisarLlegada(i, edad);
+        Puesto[nroPuesto].sentarse();
+    }
+
+    process Empleado[e=1..8]{
+        for j=1..25{
+            Puesto[e].llamarPaciente();
+            Puesto[e].esperarPaciente();
+            Vacunar();
+            Puesto[e].avisarFin();
+        }
+    }
+```
 
  6. En una sala se juntan 20 conferencistas y un coordinador para una conferencia internacional. Cuando todos han llegado a la sala (los 20 conferenciados y el coordinador) el coordinador abre la sesión con una presentación de 30 minutos y luego cada conferencista realiza su presentación de 10 minutos de a uno a la vez y de acuerdo con el orden que lleguen a la sala. Cuando todas las presentaciones terminaron, las personas (conferencistas y coordinador) se retiran.
 
