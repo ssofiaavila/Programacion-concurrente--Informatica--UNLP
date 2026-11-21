@@ -887,8 +887,121 @@ notas[100];
     }
 ```
  20. Se debe simular el funcionamiento de una mesa de votación en una elección donde hay 2 listas candidatas (A y B). A la misma acuden 300 personas para votar en el cuarto oscuro (se dispone de una función obtenervoto() que retorna la lista a votar A o B). Además está el presidente de mesa que es quien habilita a las personas a pasar a pasar al cuarto oscuro de a una a la vez de acuerdo al orden de llegada y cuando todas las personas han votado determina cual es la lista ganadora.
+```
+sem mutexFila= 1;
+queue fila;
+sem avisarLlegada=0;
+sem esperaIngreso[300]= ([300] 0);
+int cant[2]= ([2] 0);
+sem avisarSalida= 0;
+
+    process Persona[i=1..300]{
+        char voto;
+
+        P(mutexFila);
+        push(fila, i);
+        V(mutexFila);
+        V(avisarLlegada);
+        P(esperaIngreso[i]);
+        voto= obtenerVoto();
+        if (voto == 'A'){               // no hace falta mutex: hay una sola persona en el cuarto oscuro
+            cant[1]++;
+        } else{
+            cant[2]++;
+        }
+        V(avisarSalida);
+    }
+
+    process Presidente{
+        int id;
+        for (j=1..300){
+            P(avisarLlegada);
+            P(mutexFila);
+            pop(fila, id);
+            V(mutexFila);
+            V(esperaIngreso[id]);
+            P(avisarSalida);            // espera a que salga antes de dejar pasar a otro
+        }
+        if (cant[1] > cant[2]) print("Gana A");
+        else if (cant[2] > cant[1]) print("Gana B");
+        else print("Empate");
+    }
+```
 
  21. En un examen final hay P alumnos y 3 profesores. Cuando todos los alumnos y profesores han llegado comienza el examen. Para esto uno de los profesores (el primero en llegar) le da el examen a cada alumno. Cada alumno resuelve su examen, lo entrega y espera a que alguno de los profesores lo corrija y le indique la nota. Los profesores corrigen los exámenes respetando el orden en que los alumnos van entregando.
+```
+sem mutexLlegada= 1;
+int cantLlegados= 0;
+sem avisarDisponible= 0;
+sem esperaEnunciado[P]= ([P] 0);
+enunciados[P];
+sem mutexExamenes= 1;
+queue colaE;
+sem avisarEntrega= 0;
+sem esperaNota[P]= ([P] 0);
+notas[P];
+sem mutexP= 1;
+int llegada= 0;
+sem iniciarEntrega= 0;
+sem iniciarCorreccion[3]= ([3] 0);
+
+    process Alumno[i=1..P]{
+        int nota;
+        text enunciado, examen;
+
+        P(mutexLlegada);
+        cantLlegados++;
+        if (cantLlegados == P){
+            V(avisarDisponible);
+        }
+        V(mutexLlegada);
+        P(esperaEnunciado[i]);
+        enunciado= enunciados[i];
+        examen= resolver(enunciado);
+        P(mutexExamenes);
+        push(colaE, (i, examen));
+        V(mutexExamenes);
+        V(avisarEntrega);
+        P(esperaNota[i]);
+        nota= notas[i];
+    }
+
+    process Profesor[i=1..3]{
+        int id, nota;
+        text examen;
+
+        P(mutexP);
+        llegada++;
+        if (llegada == 1){
+            V(mutexP);
+            P(iniciarEntrega);              // espera a los otros 2 profesores
+            P(avisarDisponible);            // espera a todos los alumnos
+            for (j=1..P){
+                enunciados[j]= generarEnunciado();
+                V(esperaEnunciado[j]);
+            }
+            for (j=1..3){
+                V(iniciarCorreccion[j]);
+            }
+        } else {
+            if (llegada == 3){
+                V(iniciarEntrega);
+            }
+            V(mutexP);
+        }
+        P(iniciarCorreccion[i]);
+        while (true){
+            P(avisarEntrega);
+            P(mutexExamenes);
+            pop(colaE, (id, examen));
+            V(mutexExamenes);
+            nota= corregir(examen);
+            notas[id]= nota;
+            V(esperaNota[id]);
+        }
+    }
+```
+
 
  22. En una clínica hay un médico que debe atender a 20 pacientes de acuerdo al turno de cada uno de ellos (no puede atender al paciente con turno i+1 si aún no se atendió al turno i). Cada paciente ya conoce su turno al comenzar, entre 1 a 20). Al llegar espera hasta que el médico lo llame para ser atendido, se dirige al consultorio y luego espera hasta que el médico lo llame para ser atendido, se dirige al consultorio y luego espera hasta que el médico lo termine de atender para retirarse. Los únicos procesos que se pueden usar son los que representen a los pacientes y al médico. Se debe asegurar que nunca haya más de un paciente en el consultorio, no se puede usar el ID del proceso como turno.
 
