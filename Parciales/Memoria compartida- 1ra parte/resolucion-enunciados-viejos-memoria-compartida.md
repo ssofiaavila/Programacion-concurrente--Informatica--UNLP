@@ -1324,6 +1324,59 @@ sem iniciarCorreccion[3]= ([3] 0);
     }
 ```
  7. En una sala hay un profesor auxiliar y 100 alumnos. Cada alumno continuamente hace consultas que pueden ser de dos tipos: TEÓRICAS o PRÁCTICAS y cada vez que tiene una consulta para hacer se la envía por mail al docente correspondiente y espera a que este le envíe la respuesta. El profesor solo atiende consultas TEÓRICAS y el auxiliar sólo consultas PRÁCTICAS cada uno resuelve sus consultas de acuerdo con el órden de llegada. Maximizar concurrencia, el alumno sabe de qué tipo es cada consulta, los procesos no deben terminar.
+```
+    Monitor Mesa[m=1..2]{                   // 1 = profesor (teóricas), 2 = auxiliar (prácticas)
+        queue consultas;                    // de (id, consulta), por orden de llegada
+        cond hayConsulta;
+        cond esperaRta[100];
+        text respuestas[100];
+        boolean listo[100]= ([100] false);
+
+        procedure enviarConsulta(int id, text consulta, out text respuesta){
+            push(consultas, (id, consulta));
+            signal(hayConsulta);
+            while (not listo[id]) wait(esperaRta[id]);     // espera la respuesta en la misma llamada
+            respuesta= respuestas[id];
+            listo[id]= false;               // queda listo para la próxima consulta
+        }
+
+        procedure obtenerConsulta(out int id, out text consulta){
+            while (empty(consultas)) wait(hayConsulta);
+            pop(consultas, (id, consulta));
+        }
+
+        procedure responder(int id, text respuesta){
+            respuestas[id]= respuesta;
+            listo[id]= true;
+            signal(esperaRta[id]);
+        }
+    }
+
+    process Alumno[i=1..100]{
+        text consulta, tipo, respuesta;
+
+        while (true){
+            consulta= generarConsulta();
+            tipo= obtenerTipo(consulta);
+            if (tipo == "TEORICA"){
+                Mesa[1].enviarConsulta(i, consulta, respuesta);
+            } else {
+                Mesa[2].enviarConsulta(i, consulta, respuesta);
+            }
+        }
+    }
+
+    process Docente[d=1..2]{                // 1 = profesor, 2 = auxiliar
+        int id;
+        text consulta, respuesta;
+
+        while (true){
+            Mesa[d].obtenerConsulta(id, consulta);
+            respuesta= resolver(consulta);  // fuera del monitor: máxima concurrencia
+            Mesa[d].responder(id, respuesta);
+        }
+    }
+```
 
  8. En una acopiadora de cereales hay 2 empleados, uno para atender a los camiones de maíz y otro para los de girasol. Hay 30 camiones que llegan para descargar su carga (15 de maíz y 15 de girasol), cuando el camión llega espera hasta que el empleado correspondiente le avise que puede descargar el cereal. Cada empleado hace descargar los camiones que le corresponden de a uno a la vez y de acuerdo con el orden de llegada. El camión sabe qué tipo de cereal lleva; todos los procesos deben terminar.
 
