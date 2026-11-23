@@ -1265,7 +1265,64 @@ sem iniciarCorreccion[3]= ([3] 0);
 ```
 
  6. En una sala se juntan 20 conferencistas y un coordinador para una conferencia internacional. Cuando todos han llegado a la sala (los 20 conferenciados y el coordinador) el coordinador abre la sesión con una presentación de 30 minutos y luego cada conferencista realiza su presentación de 10 minutos de a uno a la vez y de acuerdo con el orden que lleguen a la sala. Cuando todas las presentaciones terminaron, las personas (conferencistas y coordinador) se retiran.
+```
+    Monitor Conferencia{
+        int cant= 0;
+        boolean llegaronTodos= false;
+        boolean terminaron= false;
+        queue fila;
+        cond llegaronTotal;
+        cond darConferencia[20];
+        cond retirarseConferencia;
 
+        procedure avisarLlegada(int id){
+            cant++;
+            push(fila, id);
+            if (cant == 20){
+                llegaronTodos= true;
+                signal(llegaronTotal);
+            }
+            wait(darConferencia[id]);       // espera su turno para presentar
+        }
+
+        procedure finalizar(){
+            int aux;
+            if (not empty(fila)){
+                pop(fila, aux);
+                signal(darConferencia[aux]);    // le pasa la palabra al siguiente
+                wait(retirarseConferencia);
+            } else {                        // fue el último en presentar
+                terminaron= true;
+                signal_all(retirarseConferencia);
+            }
+        }
+
+        procedure iniciarPresentacion(){
+            if (not llegaronTodos){
+                wait(llegaronTotal);
+            }
+        }
+
+        procedure inicioConferencistas(){   // da la palabra y espera el fin en la misma llamada
+            int aux;
+            pop(fila, aux);
+            signal(darConferencia[aux]);
+            while (not terminaron) wait(retirarseConferencia);
+        }
+    }
+
+    process Conferencista[i=1..20]{
+        Conferencia.avisarLlegada(i);
+        delay(10 min);                      // su presentación
+        Conferencia.finalizar();
+    }
+
+    process Coordinador{
+        Conferencia.iniciarPresentacion();
+        delay(30 min);                      // presentación de apertura
+        Conferencia.inicioConferencistas();
+    }
+```
  7. En una sala hay un profesor auxiliar y 100 alumnos. Cada alumno continuamente hace consultas que pueden ser de dos tipos: TEÓRICAS o PRÁCTICAS y cada vez que tiene una consulta para hacer se la envía por mail al docente correspondiente y espera a que este le envíe la respuesta. El profesor solo atiende consultas TEÓRICAS y el auxiliar sólo consultas PRÁCTICAS cada uno resuelve sus consultas de acuerdo con el órden de llegada. Maximizar concurrencia, el alumno sabe de qué tipo es cada consulta, los procesos no deben terminar.
 
  8. En una acopiadora de cereales hay 2 empleados, uno para atender a los camiones de maíz y otro para los de girasol. Hay 30 camiones que llegan para descargar su carga (15 de maíz y 15 de girasol), cuando el camión llega espera hasta que el empleado correspondiente le avise que puede descargar el cereal. Cada empleado hace descargar los camiones que le corresponden de a uno a la vez y de acuerdo con el orden de llegada. El camión sabe qué tipo de cereal lleva; todos los procesos deben terminar.
