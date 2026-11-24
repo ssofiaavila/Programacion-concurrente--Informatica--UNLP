@@ -1379,17 +1379,244 @@ sem iniciarCorreccion[3]= ([3] 0);
 ```
 
  8. En una acopiadora de cereales hay 2 empleados, uno para atender a los camiones de maíz y otro para los de girasol. Hay 30 camiones que llegan para descargar su carga (15 de maíz y 15 de girasol), cuando el camión llega espera hasta que el empleado correspondiente le avise que puede descargar el cereal. Cada empleado hace descargar los camiones que le corresponden de a uno a la vez y de acuerdo con el orden de llegada. El camión sabe qué tipo de cereal lleva; todos los procesos deben terminar.
+```
+    Monitor Acopiadora[a=1..2]{             // 1 = maíz, 2 = girasol
+        queue fila;
+        cond esperaIngreso;
+        cond esperaTurno[30];
+        cond avisoSalida;
+        boolean salioCamion= false;
+
+        procedure avisarLlegada(int id){
+            push(fila, id);
+            signal(esperaIngreso);
+            wait(esperaTurno[id]);          // espera a que el empleado le avise que descargue
+        }
+
+        procedure avisarSalida(){
+            salioCamion= true;
+            signal(avisoSalida);
+        }
+
+        procedure siguienteCamion(){
+            int aux;
+            while (empty(fila)) wait(esperaIngreso);
+            pop(fila, aux);
+            signal(esperaTurno[aux]);
+        }
+
+        procedure esperarSalida(){
+            while (not salioCamion) wait(avisoSalida);
+            salioCamion= false;             // queda listo para el próximo camión
+        }
+    }
+
+    process Camion[i=1..30]{
+        text tipo;
+        int nroAcopiadora;
+
+        tipo= obtenerTipo();
+        if (tipo == "maiz"){
+            nroAcopiadora= 1;
+        } else {
+            nroAcopiadora= 2;
+        }
+        Acopiadora[nroAcopiadora].avisarLlegada(i);
+        descargar();
+        Acopiadora[nroAcopiadora].avisarSalida();
+    }
+
+    process Empleado[e=1..2]{
+        for (j=1..15){
+            Acopiadora[e].siguienteCamion();
+            Acopiadora[e].esperarSalida();
+        }
+    }
+```
 
  9.  En una oficina hay un supervisor, un empleado y 50 personas que solicitan por mail una operación. El empleado SOLO atiende CONSULTAS, mientras que el supervisor sólo atiende TRÁMITES; cada uno atiende sus pedidos de acuerdo con el orden de llegada. Cada persona envía UNA solicitud que puede ser un TRÁMITE o para una CONSULTA, y luego espera a que le envíe el resultado. La persona sabe de qué tipo es la consulta, el empleado y el supervisor NO deben terminar su ejecución.
+```
+    Monitor Mesa[m=1..2]{                   // 1 = supervisor (trámites), 2 = empleado (consultas)
+        queue fila;                         // de (id, mensaje), por orden de llegada
+        cond mensajePendiente;
+        cond esperaRta[50];
+        text rtas[50];
+
+        procedure enviarMensaje(int id, text mensaje, out text rtdo){
+            push(fila, (id, mensaje));
+            signal(mensajePendiente);
+            wait(esperaRta[id]);            // espera en la misma llamada: el aviso no se pierde
+            rtdo= rtas[id];
+        }
+
+        procedure atender(out int id, out text mensaje){
+            while (empty(fila)) wait(mensajePendiente);
+            pop(fila, (id, mensaje));
+        }
+
+        procedure enviarRespuesta(int id, text rta){
+            rtas[id]= rta;
+            signal(esperaRta[id]);
+        }
+    }
+
+    process Persona[i=1..50]{
+        text tipo, mensaje, rtdo;
+        int nro;
+
+        mensaje= generarMensaje();
+        tipo= obtenerTipo(mensaje);
+        if (tipo == "tramite"){
+            nro= 1;
+        } else {
+            nro= 2;
+        }
+        Mesa[nro].enviarMensaje(i, mensaje, rtdo);
+    }
+
+    process Empleado[e=1..2]{               // 1 = supervisor, 2 = empleado
+        int id;
+        text mensaje, respuesta;
+
+        while (true){
+            Mesa[e].atender(id, mensaje);
+            respuesta= resolverMensaje(mensaje);    // fuera del monitor
+            Mesa[e].enviarRespuesta(id, respuesta);
+        }
+    }
+```
 
  10. Existen N personas que desean acceder a un mirador al borde del lago Nahuel Huapi en Bariloche. Como el
     mirador es angosto, sólo puede ser usado por una persona a la vez.
-    a. El accedo al mirador es por orden de llegada.
+    a. El acceso al mirador es por orden de llegada.
     b. El acceso al mirador es por orden de llegada, pero dando prioridad a los mayores de 60 años.
     *Solución:* `Parciales/Soluciones años anteriores/PConcu-2024---Soluciones-parcial-MC1-versiona2.pdf` (parcial MC1 7-10-24, ej. 2 (incisos a y b), págs. 2-5)
+```
+a. Por orden de llegada
+
+    Monitor Mirador{
+        queue fila;
+        cond espera[N];
+        boolean libre= true;
+
+        procedure ingresar(int id){
+            if (not libre){
+                push(fila, id);
+                wait(espera[id]);
+            } else {
+                libre= false;
+            }
+        }
+
+        procedure salir(){
+            int aux;
+            if (not empty(fila)){
+                pop(fila, aux);
+                signal(espera[aux]);        // le pasa el mirador directo, libre sigue en false
+            } else {
+                libre= true;
+            }
+        }
+    }
+
+    process Persona[i=1..N]{
+        Mirador.ingresar(i);
+        usarMirador();
+        Mirador.salir();
+    }
+
+b. Por orden de llegada, con prioridad a los mayores de 60
+
+    Monitor Mirador{
+        queue filaMayores, filaResto;       // cada una respeta el orden de llegada
+        cond espera[N];
+        boolean libre= true;
+
+        procedure ingresar(int id, int edad){
+            if (not libre){
+                if (edad > 60){
+                    push(filaMayores, id);
+                } else {
+                    push(filaResto, id);
+                }
+                wait(espera[id]);
+            } else {
+                libre= false;
+            }
+        }
+
+        procedure salir(){
+            int aux;
+            if (not empty(filaMayores)){
+                pop(filaMayores, aux);
+                signal(espera[aux]);
+            } else if (not empty(filaResto)){
+                pop(filaResto, aux);
+                signal(espera[aux]);
+            } else {
+                libre= true;
+            }
+        }
+    }
+
+    process Persona[i=1..N]{
+        int edad;
+
+        edad= obtenerEdad();
+        Mirador.ingresar(i, edad);
+        usarMirador();
+        Mirador.salir();
+    }
+```
 
  11. En una planta verificadora de vehículos existen 5 estaciones de verificación. Hay 75 vehículos que van para ser verificados, cada uno conoce el número de estación a la cual debe ir. Cada vehículo se dirige a la estación correspondiente y espera a que lo atiendan. Una vez que le entregan el comprobante de verificación, el vehículo se retira. Considere que en cada estación se atienden a los vehículos de acuerdo con el orden de llegada. Nota: maximizar la concurrencia.
     *Solución:* `Parciales/Soluciones años anteriores/PConcu-2022---Soluciones-parcial-fecha-2.pdf` (recuperatorio 2022, ej. 2, pág. 2)
+```
+    Monitor Estacion[s=1..5]{
+        queue fila;
+        cond hayVehiculo;
+        cond espera[75];
+        text comprobantes[75];
+        boolean listo[75]= ([75] false);
+
+        procedure llegar(int id, out text comp){
+            push(fila, id);
+            signal(hayVehiculo);
+            while (not listo[id]) wait(espera[id]);
+            comp= comprobantes[id];
+        }
+
+        procedure siguiente(out int id){
+            while (empty(fila)) wait(hayVehiculo);
+            pop(fila, id);
+        }
+
+        procedure entregar(int id, text comp){
+            comprobantes[id]= comp;
+            listo[id]= true;
+            signal(espera[id]);
+        }
+    }
+
+    process Vehiculo[i=1..75]{
+        int nroEstacion;
+        text comp;
+
+        nroEstacion= obtenerEstacion();
+        Estacion[nroEstacion].llegar(i, comp);
+    }
+
+    process Verificador[s=1..5]{
+        int id;
+        text comp;
+
+        while (true){                       // no se sabe cuántos vehículos van a cada estación
+            Estacion[s].siguiente(id);
+            comp= verificar(id);            // fuera del monitor: maximiza la concurrencia
+            Estacion[s].entregar(id, comp);
+        }
+    }
+```
 
  12. En un comedor estudiantil hay un horno microondas que debe ser usado por E estudiantes de acuerdo con el orden de llegada. Cuando el estudiante accede al horno, lo usa y luego se retira para dejar al siguiente. Nota: cada Estudiante usa sólo una vez el horno; los únicos procesos que se pueden usar son los "estudiantes".
     *Solución:* `Parciales/Soluciones años anteriores/PConcu-2022---Soluciones-parcial-fecha-3.pdf` (parcial 13-12-22, ej. 2, pág. 2)
